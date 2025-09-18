@@ -1,4 +1,4 @@
-using LinearAlgebra,LowRankApprox,Arpack,QuadEig,LaTeXStrings,GenericLinearAlgebra,GenericSchur,GenericSVD,MultiFloats
+using LinearAlgebra,LowRankApprox,Arpack,QuadEig
 
 function fmean(v::Vector,f::Function,f⁻¹::Function)
     return f⁻¹(sum(f.(v))/size(v)[1])
