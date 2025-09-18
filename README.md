@@ -7,7 +7,9 @@ Download `BTOAR.jl` to your Julia working directory and type
 julia> include("BTOAR.jl")
 ```
 You may have to install the following dependencies:
-  - 
+  - `Arpack.jl`
+  - `LowRankApprox.jl`
+  - `QuadEig.jl`
 
 ## Usage
 ```julia
@@ -25,5 +27,40 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `kℓₘₐₓ` is the maximum subspace size the algorithm is permitted to build. This should be at least two times `req`, maybe even larger for a difficult domain of interest. However, if memory requirements are a problem, you may wish to lower `kℓₘₐₓ`. Setting this argument to a very high value has the effect of reducing the algorithm to non-restarted block TOAR.
   - `ℓ` is the block size/width. This should normally be set to at most 5. For larger block sizes, it might be a good idea to set `step` lower. The default value, 1, reduces the algorithm to the standard non-block restarted TOAR algorithm.
   - `step` is an optional argument specifying how many blocks should be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace.
-  - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value as reasonably far from the 
+  - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow.
+  - `inv` is whether to invert the QEP after shifting. This should almost always be set to `true` (the default value if unspecified) so that eigenvalues closest to `σ` converge first. If set to `false`, eigenvalues furthest from the shift point will converge first.
+  - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
+  - `dtol` is an internal numerical tolerance for breakdown/deflation detection. Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
+  - `rrv` is whether to use refined Ritz vectors. Refined Ritz vectors are not currently implemented and may be scrapped entirely, as it is not clear if they are ever worthwhile.
+  - `arpack` is meaningless as long as refined Ritz vectors are not implemented.
+  - `flvd` is whether to use Fan, Lin & Van Dooren scaling on the QEP. Scaling is applied based on matrix 1-norms.
+  - `verb` is the level of verbosity. It can take three values:
+    - `0`: no verbosity
+    - `1`: some verbosity
+    - `2`: full verbosity
 
+    Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting.
+  - `check_singular` is whether to check if the QEP is numerically singular or not. The default value is `false`, because it is a potentially expensive test that may fail to detect nonsingularity.
+
+### Returns
+  - `λ`: array of approximate eigenvalues.
+  - `V`: matrix of approximate eigenvectors (as columns).
+  - `ρ`: array of associated backward error residuals (as defined above).
+
+### Examples
+```julia
+M = rand(ComplexF64, 1000, 1000) #dense matrices just for simple demonstration,
+D = rand(ComplexF64, 1000, 1000) #not the standard use-case
+K = rand(ComplexF64, 1000, 1000)
+
+#we ask for 30 eigenpairs with residuals below 10^-10
+λ, V, ρ = quadEigRBTOAR(M,D,K,req=30,tol=1e-10)
+
+#plot results, colouring eigenvalues according to residual
+using Plots
+scatter(λ, #unfinished
+```
+
+```julia
+
+```
