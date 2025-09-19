@@ -48,19 +48,40 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `ρ`: array of associated backward error residuals (as defined above).
 
 ### Examples
+Basic usage example:
 ```julia
-M = rand(ComplexF64, 1000, 1000) #dense matrices just for simple demonstration,
+M = rand(ComplexF64, 1000, 1000) #small dense matrices just for simple demonstration,
 D = rand(ComplexF64, 1000, 1000) #not the standard use-case
 K = rand(ComplexF64, 1000, 1000)
 
 #we ask for 30 eigenpairs with residuals below 10^-10
-λ, V, ρ = quadEigRBTOAR(M,D,K,req=30,tol=1e-10)
+#this will find those near the origin
+λ, V, ρ = quadEigRBTOAR(M, D, K, 30, 1e-10)
 
 #plot results, colouring eigenvalues according to residual
 using Plots
-scatter(λ, #unfinished
+scatter(λ, marker_z=log.(ρ), c=:rainbow2, xlabel="Re(λ)", ylabel="Im(λ)", legend=false)
 ```
-
+To find 14 eigenvalues close to $69-420i$:
+```julia
+λ, V, ρ = quadEigRBTOAR(M, D, K, 14, σ=69-420im)
+```
+To find 40 largest-magnitude eigenvalues to a low accuracy:
+```julia
+λ, V, ρ = quadEigRBTOAR(M, D, K, 40, 1e-6, inv=false) CHANGE INV NAME
+```
+To print information during execution:
 ```julia
 
 ```
+To use a larger block size:
+```julia
+
+```
+**Don't** do this:
+```julia
+#what could go wrong? :3
+
+```
+
+Still need to cite sources, change name of inv, sort out checksingular(), add verbosity, verify examples, test code on more problems and refine defaults if necessary, check stupid edge-cases
