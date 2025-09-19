@@ -558,7 +558,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
  -`step::Int`: number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
- -`inv::Bool`: whether to invert the QEP. Inverting will find eigenvalues closest to `σ`, not inverting will find those furthest away. Defaults to `true`.\n
+ -`smallest::Bool`: whether to invert the QEP. Inverting will find eigenvalues closest to `σ`, not inverting will find those furthest away. Defaults to `true`.\n
  -`keep::Function`: function that accepts a `ComplexF64` eigenvalue and returns whether it is within the domain of interest. Defaults to always true.\n
  -`dtol::Float64`: internal numerical tolerance for deflation/breakdown detection. Don't change this unless you know what you're doing.\n
  -`rrv::Bool`: whether to use Ritz vector refinement (default no). Not currently implemented.\n
