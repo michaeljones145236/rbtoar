@@ -1,5 +1,5 @@
 # Restarted Block TOAR
-A pure Julia implementation of a restarted block version of the TOAR algorithm for the solution of large sparse quadratic eigenvalue problems. Currently a WIP, some features are missing and it is largely untested.
+A pure Julia implementation of a restarted (see [2, Section 5]) block version of the TOAR [1] algorithm for the solution of large sparse quadratic eigenvalue problems. Currently a WIP, some features are missing and it is largely untested.
 
 ## Installation
 Download `BTOAR.jl` to your Julia working directory and type
@@ -13,7 +13,7 @@ You may have to install the following dependencies:
 
 ## Usage
 ```julia
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, inv::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Bool=false, arpack::Bool=true, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Bool=false, arpack::Bool=true, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
 ```
 The function builds a second-order Krylov subspace, restarting when necessary, until the desired number of eigenpairs can be recovered with an acceptable backward error.
 
@@ -28,12 +28,12 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `ℓ` is the block size/width. This should normally be set to at most 5. For larger block sizes, it might be a good idea to set `step` lower. The default value, 1, reduces the algorithm to the standard non-block restarted TOAR algorithm.
   - `step` is an optional argument specifying how many blocks should be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace.
   - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow.
-  - `inv` is whether to invert the QEP after shifting. This should almost always be set to `true` (the default value if unspecified) so that eigenvalues closest to `σ` converge first. If set to `false`, eigenvalues furthest from the shift point will converge first.
+  - `smallest` is whether to target the eigenvalues closest to the shift. This should almost always be set to `true` (the default value if unspecified). If set to `false`, the eigensolver will target eigenvalues furthest away from the shift instead.
   - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
   - `dtol` is an internal numerical tolerance for breakdown/deflation detection. Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
   - `rrv` is whether to use refined Ritz vectors. Refined Ritz vectors are not currently implemented and may be scrapped entirely, as it is not clear if they are ever worthwhile.
   - `arpack` is meaningless as long as refined Ritz vectors are not implemented.
-  - `flvd` is whether to use Fan, Lin & Van Dooren scaling on the QEP. Scaling is applied based on matrix 1-norms.
+  - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms.
   - `verb` is the level of verbosity. It can take three values:
     - `0`: no verbosity
     - `1`: some verbosity
@@ -64,24 +64,37 @@ scatter(λ, marker_z=log.(ρ), c=:rainbow2, xlabel="Re(λ)", ylabel="Im(λ)", le
 ```
 To find 14 eigenvalues close to $69-420i$:
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, 14, σ=69-420im)
+λ, V, ρ = quadEigRBTOAR(M, D, K, req=14, σ=69-420im)
 ```
 To find 40 largest-magnitude eigenvalues to a low accuracy:
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, 40, 1e-6, inv=false) CHANGE INV NAME
+λ, V, ρ = quadEigRBTOAR(M, D, K, req=40, tol=1e-6, smallest=false)
 ```
 To print information during execution:
 ```julia
-
+λ, V, ρ = quadEigRBTOAR(M, D, K, verb=1)
 ```
 To use a larger block size:
 ```julia
-
+λ, V, ρ = quadEigRBTOAR(M, D, K, ℓ=4, step=3)
+```
+To find eigenvalues in the top-right quadrant of $\mathbb{C}$:
+```julia
+doi(λ) = (real.(λ) > 0) && (imag.(λ) > 0)
+λ, V, ρ = quadEigRBTOAR(M, D, K, σ=2+2im, keep=doi)
 ```
 **Don't** do this:
 ```julia
 #what could go wrong? :3
-
+doi(λ) = abs(λ) .> 1e3
+λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-16, req=120, kℓₘₐₓ=120, ℓ=20, dtol=1e-3, keep=doi)
 ```
 
-Still need to cite sources, change name of inv, sort out checksingular(), add verbosity, verify examples, test code on more problems and refine defaults if necessary, check stupid edge-cases
+## References
+[1] D. Lu, Y. Su, and Z. Bai. "Stability Analysis of the Two-Level Orthogonal Arnoldi Procedure". In: SIAM J. Matrix Anal. Appl. 37 (2016), pp. 195–214. URL: https://epubs.siam.org/doi/10.1137/151005142
+
+[2] C. Campos and J. E. Roman. "Restarted Q-Arnoldi-Type Methods Exploiting Symmetry in Quadratic Eigenvalue Problems". In: BIT Numerical Mathematics 56 (2016), pp. 1213–1236. URL: https://link.springer.com/article/10.1007/s10543-016-0601-5
+
+[3] H. Fan and W. Lin and P. Van Dooren. "Normwise Scaling of Second Order Polynomial Matrices". In: SIAM J. Matrix Anal. Appl. 26 (2004), pp. 252-256. URL: https://epubs.siam.org/doi/abs/10.1137/S0895479803434914
+
+Still need to cite sources, sort out checksingular(), add/modify verbosity, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases, add clever step early on, remove Arpack dependency
