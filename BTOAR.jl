@@ -572,7 +572,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix;K::AbstractMatrix,req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,smallest::Bool=true,keep::Function=every,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,smallest::Bool=true,keep::Function=every,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
