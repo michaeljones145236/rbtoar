@@ -20,7 +20,7 @@ function rrqr(A::Matrix,tol::Float64)
 end
 
 #opnorm₂(A) = maximum(size(A)) > 1000 ? svds(A,nsv=1,ritzvec=false)[1].S[1] : opnorm(Matrix(A)) #2-norm for sparse matrices (used in scaling)
-function opnorm₂(A)
+function opnorm₂(A) ######################### SHOULD REPLACE WITH LOWRANKAPPROX FUNCTION
     while true
         try #sometimes the fast 2-norm fails for some reason, so we keep trying until it works
             return maximum(size(A)) > 1000 ? svds(A,nsv=1,ritzvec=false)[1].S[1] : opnorm(Matrix(A))
@@ -572,7 +572,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1;step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,inv::Bool=true,keep::Function=every,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1;step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,smallest::Bool=true,keep::Function=every,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -593,6 +593,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,req
     if rrv
         @warn "refined Ritz vectors are not currently implemented"
     end
+
+    inv = smallest #Fran wanted me to rename this argument
     
     if check_singular
         if (cond(M,1) > 1e10) && (cond(K,1) > 1e10) #only if both of these two are singular can the whole QEP be
