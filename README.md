@@ -97,4 +97,4 @@ doi(λ) = abs(λ) .> 1e3
 
 [3] H. Fan and W. Lin and P. Van Dooren. "Normwise Scaling of Second Order Polynomial Matrices". In: SIAM J. Matrix Anal. Appl. 26 (2004), pp. 252-256. URL: https://epubs.siam.org/doi/abs/10.1137/S0895479803434914
 
-Still need to cite sources, sort out checksingular(), add/modify verbosity, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases, add clever step early on, remove Arpack dependency
+Still need to make checksingular() use cheap 1-norm from LU factorisation, add/modify verbosity, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases, add clever step early on, remove Arpack dependency
