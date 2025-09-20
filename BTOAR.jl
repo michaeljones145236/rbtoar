@@ -556,7 +556,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`tol::Float64`: maximum permissible backward error residual `ρ` for an eigenpair to be returned.\n
  -`kℓₘₐₓ::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set significantly larger than `req`.\n
  -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
- -`step::Int`: number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
+ -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
  -`smallest::Bool`: whether to invert the QEP. Inverting will find eigenvalues closest to `σ`, not inverting will find those furthest away. Defaults to `true`.\n
  -`keep::Function`: function that accepts a `ComplexF64` eigenvalue and returns whether it is within the domain of interest. Defaults to always true.\n
@@ -565,7 +565,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`arpack::Bool`: if `rrv` is `true`, whether to use cheaper partial SVD method. If set to `false`, this can cuase a large performance impact.`\n
  -`flvd::Bool`: whether to apply Fan, Lin & Van Dooren scaling to the QEP. Default `true`.\n
  -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact. (Not implemented yet.)\n
- -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `false`. This test can be expensive and could potentially give false positives, though this is unlikely.\n
+ -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `true`. This test can be expensive and could give false positives for some QEPs.\n
 
 # Returns
  -`λ::Vector`: array of Ritz values.\n
@@ -589,6 +589,21 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     if 2req > kℓₘₐₓ
         @warn "req should not be larger than kℓₘₐₓ/2; the algorithm may stagnate"
     end
+    if ℓ*step > 50
+        @warn "ℓ*step = $(ℓ*step), consider setting step lower to avoid building more subspace than necessary"
+    end
+    if step < 1
+        @error "step must be positive"
+    end
+    if ℓ > 5
+        @warn "it is not reccommended to set ℓ greater than 5 (ℓ = $ℓ)"
+    end
+    if ℓ < 1
+        @error "ℓ must be positive"
+    end
+    if (dtol > 1e-6) || (dtol < 1e-15)
+        @warn "bad value for dtol (dtol = $dtol)"
+    end
 
     if rrv
         @warn "refined Ritz vectors are not currently implemented"
@@ -597,19 +612,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     inv = smallest #Fran wanted me to rename this argument
     
     if check_singular
+        #normally a condition number of 1e10 isn't enough to be called numerically singular in Float64, but for TOAR we have to careful
         if (cond(M,1) > 1e10) && (cond(K,1) > 1e10) #only if both of these two are singular can the whole QEP be
-            test_λ = [1e-9,1e-6,1e-3,1.0,1e3,1e6,1e9,-1e-9,-1e-6,-1e-3,-1.0,-1e3,-1e6,-1e9] #only test real values, this is not exhaustive
-            for i in test_λ
-                if cond(i^2*M+i*D+K) < 1e10
-                    could_be_singular = false
-                    break
-                end
+            could_be_singular = true
+            if verb == 2
+                print("\n⚠️M and K both close to singular.\n\n")
             end
-        end
-        if could_be_singular
-            @warn "QEP could be numerically singular."
-        elseif verb == 2
-            print("QEP is not numerically singular 👍\n\n")
         end
     end
 
@@ -630,6 +638,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             @warn "QEP is badly scaled: ‖M‖₁=$Mₙₒᵣₘ, ‖D‖₁=$Dₙₒᵣₘ, ‖K‖₁=$Kₙₒᵣₘ. Consider setting flvd=true."
         end
     end
+
     if verb > 0 #some or all verbosity
         print("== SCALING INFORMATION ==\n")
         if flvd
@@ -642,6 +651,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     Kₛ = δ*K + σ*δ*D + σ^2*δ*M #scaled and shifted matrices (I multiplied out the cancelling factors of γ)
     Dₛ = δ*γ*D + 2σ*δ*γ*M
     Mₛ = δ*γ^2*M
+
+    if check_singular && could_be_singular #short-circuiting and so if check_singular is false, could_be_singular doesn't need to exist
+        if cond(Kₛ,1) > 1e10
+            @warn "QEP may be close to singular"
+        end
+    end
     
     Mᴸᵁ = lu(inv ? Kₛ : Mₛ) #factorise M for fast linear solves
     M⁻¹(x) = Mᴸᵁ\x #use factorised version of M
@@ -654,7 +669,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     transformed_keep_deflate_distant(λ) = transformed_keep(λ) .&& deflate_distant(λ) #to keep the right eigenvalues and deflate the third most distant
     
     if verb > 0
-        print("== BTOAR ALGORITHM ==\n\n")
+        print("== START OF BTOAR ALGORITHM ==\n\n")
     end
 
     ############################## EVERYTHING BEFORE THIS POINT IS BASICALLY THE SAME AS IN quadEigBTOAR() #################################
@@ -669,7 +684,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     QᵀDQ = zeros(ComplexF64,0,0)
     QᵀKQ = zeros(ComplexF64,0,0)
 
-    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),step,deftol=dtol,verb=verb) #initialise by building the first step blocks
+    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),maximum([step,Int(floor(req/ℓ))]),deftol=dtol,verb=verb) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
     good = 0 #number of acceptable eigenpairs computed
 
@@ -706,20 +721,35 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             ρ[i] = norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ)
         end
         good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
-        display(good)
-        print("\n")
+        if verb == 1
+            print("Subspace size: $m / $kℓₘₐₓ\nGood eigenpairs: $good\n\n")
+        elseif verb == 2
+            print("Subspace size: $m / $kℓₘₐₓ\nTotal good eigenpairs: $(sum((ρ .< tol)))\nGood eigenpairs in DoI: $good\n\n")
+        end
 
         if good ≥ req #if we have found enough acceptable eigenpairs
+            if verb == 2
+                print("$good good eigenpairs found, returning.")
+            end
             good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
             λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]]
             X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
             ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
             return λ,X,ρ #we're done here
         elseif m+step*ℓ > kℓₘₐₓ #if another step could expand the subspace too far
+            if verb > 0
+                print("== RESTART =="*"\n"^(3-verb)) #fancy way of getting the number of newlines right
+            end
             if sum(keep.(λ)) + step*ℓ > kℓₘₐₓ #if deflating by keep() would not be enough
                 Q,U,H = restartBTOAR(Q,U,H,transformed_keep_deflate_distant,verb)
+                if verb == 2
+                    print("Deflating according to keep() and ⅓ most distant.\n\n")
+                end
             else #if deflating by keep() is enough
                 Q,U,H = restartBTOAR(Q,U,H,transformed_keep,verb)
+                if verb == 2
+                    print("Deflating only according to keep().\n\n")
+                end
             end
             MQ = M¹(Q)
             DQ = D¹(Q)
@@ -728,9 +758,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             QᵀDQ = Q'*D¹(Q)
             QᵀKQ = Q'*K¹(Q)
         else #if we are free to grow the subspace by step
-            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,step,ℓ;deftol=dtol,verb=verb) #grow the subspace by step
+            if verb > 0
+                print("== CONTINUING BTOAR ALGORITHM ==\n")
+            end
+            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/ℓ)),Int(floor((kℓₘₐₓ-m)/ℓ))])]),ℓ;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
+            print("\n\n")
         end
         m = size(Q,2)
-        display(m)
     end
 end
