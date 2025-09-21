@@ -1,4 +1,4 @@
-using LinearAlgebra,LowRankApprox,Arpack,QuadEig
+using LinearAlgebra,LowRankApprox,QuadEig
 
 function fmean(v::Vector,f::Function,f⁻¹::Function)
     return f⁻¹(sum(f.(v))/size(v)[1])
@@ -15,21 +15,8 @@ end
 #this function doesn't actually compute a rrqr factorisation because R will not necessarily be upper trapezoidal, but we don't really care
 function rrqr(A::Matrix,tol::Float64)
     Q,R,p = pqr(A,rtol=tol) #use the so-called `partial QR factorisation'
-    #display(opnorm(Q*R*ColumnPermutation(p)'-A,1)/opnorm(A,1))
     return Q,R*ColumnPermutation(p)' #return Q and (unfortunately non-upper trapezoidal) R
 end
-
-#opnorm₂(A) = maximum(size(A)) > 1000 ? svds(A,nsv=1,ritzvec=false)[1].S[1] : opnorm(Matrix(A)) #2-norm for sparse matrices (used in scaling)
-function opnorm₂(A) ######################### SHOULD REPLACE WITH LOWRANKAPPROX FUNCTION
-    while true
-        try #sometimes the fast 2-norm fails for some reason, so we keep trying until it works
-            return maximum(size(A)) > 1000 ? svds(A,nsv=1,ritzvec=false)[1].S[1] : opnorm(Matrix(A))
-        catch
-            @warn "Fast 2-norm failed, retrying"
-        end
-    end
-end
-
 
 every(λ) = true #this function is just here as the default for the keep function in quadEigRBTOAR
 
@@ -201,7 +188,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
 end
 
 """
-    quadEigBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, k::Int, ℓ::Int; σ::Union{Float64,Complex{Float64}}=0.0+0.0im, inv::Bool=true, dtol::Float64=1e-10, rrv::Bool=false, arpack::Bool=true, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, k::Int, ℓ::Int; σ::Union{Float64,Complex{Float64}}=0.0+0.0im, inv::Bool=true, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
     
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR algorithm.
 
@@ -214,8 +201,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR a
  -`σ::Union{Float64,Complex{Float64}}`: spectral transformation shift to use (default `0`).\n
  -`inv::Bool`: whether to use spectral inversion (default yes).\n
  -`dtol::Float64`: optional internal numerical deflation/breakdown tolerance for BTOAR.\n
- -`rrv::Bool`: whether to use refined Ritz vectors (default no).\n
- -`arpack::Bool`: if using refined Ritz vectors, whether to use a cheap partial SVD method based on ARPACK (default yes, setting to no could have a large performance impact).\n
+ -`rrv::Int`: the number of inverse power iterations to use in Ritz vector refinement (default `0`).\n
  -`flvd::Bool`: whether to use Fan, Lin and Van Dooren scaling on the QEP (default yes).\n
  -`verb::Int`: level of verbosity. 0: no verbosity, 1: some verbosity, 2: full verbosity. `verb=2` has a large performance impact.\n
  -`check_singular::Bool`: whether to test for numerical singularity and warn if it is found. Default `false`, setting to `true` can have a significant performance impact.\n
@@ -225,7 +211,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR a
  -`V::Matrix{ComplexF64}`: Array of Ritz vectors (approximate eigenvectors).\n
  -`ρ::Vector{ComplexF64}`: Array of backward error residuals for the eigenpairs.\n
 """
-function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::Int,ℓ::Int;σ::Union{Float64,Complex{Float64}}=0.0+0.0im,inv::Bool=true,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::Int,ℓ::Int;σ::Union{Float64,Complex{Float64}}=0.0+0.0im,inv::Bool=true,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -300,7 +286,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     Qₖ,_,_,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),k,deftol=dtol,verb=verb) #run the BTOAR algorithm
     m = size(Qₖ,2) #there might have been deflations
     
-    if rrv #if using refined ritz vectors, we want to save some of the work we do here for later
+    if false #rrv (temporary bodge)
         MQₖ = M¹(Qₖ) #save intermediate step for refined ritz vectors
         DQₖ = D¹(Qₖ)
         KQₖ = K¹(Qₖ)
@@ -315,7 +301,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     LP = linearize(Kₘ,Dₘ,Mₘ) #linearize the QEP
     Z = zeros(ComplexF64,m,2m) #preallocate space for reduced-order eigenvectors
     λ,V = eigen(LP.A,LP.B) #generalised eigenproblem solver
-    if rrv
+    if false #rrv (temporary bodge)
         MQₖᵀMQₖ = MQₖ'MQₖ #pre-form matrices for faster formation of PQ
         MQₖᵀDQₖ = MQₖ'DQₖ #these multiplications are (kℓ×n)(n×kℓ)
         MQₖᵀKQₖ = MQₖ'KQₖ
@@ -544,7 +530,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
 end
 
 """
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Bool=false, arpack::Bool=true, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
 
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted block TOAR algorithm.
 
@@ -561,8 +547,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`smallest::Bool`: whether to invert the QEP. Inverting will find eigenvalues closest to `σ`, not inverting will find those furthest away. Defaults to `true`.\n
  -`keep::Function`: function that accepts a `ComplexF64` eigenvalue and returns whether it is within the domain of interest. Defaults to always true.\n
  -`dtol::Float64`: internal numerical tolerance for deflation/breakdown detection. Don't change this unless you know what you're doing.\n
- -`rrv::Bool`: whether to use Ritz vector refinement (default no). Not currently implemented.\n
- -`arpack::Bool`: if `rrv` is `true`, whether to use cheaper partial SVD method. If set to `false`, this can cuase a large performance impact.`\n
+ -`rrv::Int`: the number of inverse power iterations to use in Ritz vector refinement (default `0`). Not currently implemented.\n
  -`flvd::Bool`: whether to apply Fan, Lin & Van Dooren scaling to the QEP. Default `true`.\n
  -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact. (Not implemented yet.)\n
  -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `true`. This test can be expensive and could give false positives for some QEPs.\n
@@ -572,7 +557,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,smallest::Bool=true,keep::Function=every,dtol::Float64=1e-10,rrv::Bool=false,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -604,12 +589,15 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     if (dtol > 1e-6) || (dtol < 1e-15)
         @warn "bad value for dtol (dtol = $dtol)"
     end
+    if which ∉ [:SM;:LM]
+        @error "valid values of which are :SM and :LM"
+    end
 
-    if rrv
+    if rrv != 0
         @warn "refined Ritz vectors are not currently implemented"
     end
 
-    inv = smallest #Fran wanted me to rename this argument
+    inv = which == :SM #Fran wanted me to rename this argument
     
     if check_singular
         #normally a condition number of 1e10 isn't enough to be called numerically singular in Float64, but for TOAR we have to careful
