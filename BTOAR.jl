@@ -526,6 +526,9 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         H[size(H,1)-ℓ+1:size(H,1),size(H,2)-ℓ+1:size(H,2)] = Rᵗ #fill in bottom-right block entry of Hₖ
         U = [[[U[1:Int(size(U,1)/2),:];zeros(size(Qᵗ,1)-size(U,1),size(U,2));U[Int(size(U,1)/2)+1:size(U,1),:]] Qᵗ];zeros(size(Qᵗ,1)-size(U,1),size(U,2)+size(Qᵗ,2))] #form new columns and rows of Uⱼ
     end
+    if verb > 0
+        print("\n\n")
+    end
     return Q,U,H
 end
 
@@ -750,7 +753,6 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
                 print("== CONTINUING BTOAR ALGORITHM ==\n")
             end
             Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/ℓ)),Int(floor((kℓₘₐₓ-m)/ℓ))])]),ℓ;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
-            print("\n\n")
         end
         m = size(Q,2)
     end
