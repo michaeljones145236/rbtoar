@@ -7,13 +7,12 @@ Download `BTOAR.jl` to your Julia working directory and type
 julia> include("BTOAR.jl")
 ```
 You may have to install the following dependencies:
-  - `Arpack.jl`
   - `LowRankApprox.jl`
   - `QuadEig.jl`
 
 ## Usage
 ```julia
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Bool=false, arpack::Bool=true, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
 ```
 The function builds a second-order Krylov subspace, restarting when necessary, until the desired number of eigenpairs can be recovered with an acceptable backward error.
 
@@ -28,11 +27,10 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `ℓ` is the block size/width. This should normally be set to at most 5. For larger block sizes, it might be a good idea to set `step` lower. The default value, 1, reduces the algorithm to the standard non-block restarted TOAR algorithm.
   - `step` is an optional argument specifying the minimum number of blocks to be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace.
   - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow.
-  - `smallest` is whether to target the eigenvalues closest to the shift. This should almost always be set to `true` (the default value if unspecified). If set to `false`, the eigensolver will target eigenvalues furthest away from the shift instead.
+  - `which` specifies which eigenvalues to target. The default is `:SM`, which targets eigenvalues closest to `σ`. The other accepted value is `:LM`, which targets eigenvalues furthest from `σ`.
   - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
   - `dtol` is an internal numerical tolerance for breakdown/deflation detection. Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
-  - `rrv` is whether to use refined Ritz vectors. Refined Ritz vectors are not currently implemented and may be scrapped entirely, as it is not clear if they are ever worthwhile.
-  - `arpack` is meaningless as long as refined Ritz vectors are not implemented.
+  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. **Currently not implemented, has no effect.**
   - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms.
   - `verb` is the level of verbosity. It can take three values:
     - `0`: no verbosity
@@ -97,4 +95,4 @@ doi(λ) = abs(λ) .> 1e3
 
 [3] H. Fan and W. Lin and P. Van Dooren. "Normwise Scaling of Second Order Polynomial Matrices". In: SIAM J. Matrix Anal. Appl. 26 (2004), pp. 252-256. URL: https://epubs.siam.org/doi/abs/10.1137/S0895479803434914
 
-Still need to make checksingular() use cheap 1-norm from LU factorisation, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases, remove Arpack dependency
+Still need to make checksingular() use cheap 1-norm from LU factorisation, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases
