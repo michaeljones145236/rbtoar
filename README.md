@@ -12,7 +12,7 @@ You may have to install the following dependencies:
 
 ## Usage
 ```julia
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 ```
 The function builds a second-order Krylov subspace, restarting when necessary, until the desired number of eigenpairs can be recovered with an acceptable backward error.
 
@@ -39,6 +39,7 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
 
     Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting.
   - `check_singular` is whether to check if the QEP is numerically singular or not. The default value is `false`, because it is a potentially expensive test that may fail to detect nonsingularity.
+  - `give_up` specifies how many restarts to allow before terminating the algorithm without finishing, i.e. "giving up". When this happens, the algorithm will still return whatever it was able to find and raise a warning. The default is to allow (a reasonably generous) 10 restarts. If the algorithm does not succeed within 10 restarts, it is unlikely it ever will without changes to other parameters (like `req`, `tol`, `kℓₘₐₓ`) especially for low values of `tol`.
 
 ### Returns
   - `λ`: array of approximate eigenvalues.
@@ -54,15 +55,15 @@ K = rand(ComplexF64, 1000, 1000)
 
 #we ask for 30 eigenpairs with residuals below 10^-10
 #this will find those near the origin
-λ, V, ρ = quadEigRBTOAR(M, D, K, 30, 1e-10)
+λ, V, ρ = quadEigRBTOAR(M, D, K, req=30, tol=1e-10)
 
 #plot results, colouring eigenvalues according to residual
 using Plots
-scatter(λ, marker_z=log.(ρ), c=:rainbow2, xlabel="Re(λ)", ylabel="Im(λ)", legend=false)
+display(scatter(λ, marker_z=log.(ρ), c=:rainbow2, xlabel="Re(λ)", ylabel="Im(λ)", legend=false))
 ```
-To find 14 eigenvalues close to $69-420i$:
+To find 14 eigenvalues close to $69-420i$ (if there are any):
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, req=14, σ=69-420im)
+λ, V, ρ = quadEigRBTOAR(M, D, K, req=14, σ=69.0-420.0im)
 ```
 To find 40 largest-magnitude eigenvalues to a low accuracy:
 ```julia
@@ -79,7 +80,7 @@ To use a larger block size:
 To find eigenvalues in the top-right quadrant of $\mathbb{C}$:
 ```julia
 doi(λ) = (real.(λ) > 0) && (imag.(λ) > 0)
-λ, V, ρ = quadEigRBTOAR(M, D, K, σ=2+2im, keep=doi)
+λ, V, ρ = quadEigRBTOAR(M, D, K, σ=0.2+0.2im, keep=doi)
 ```
 **Don't** do this:
 ```julia
@@ -95,4 +96,4 @@ doi(λ) = abs(λ) .> 1e3
 
 [3] H. Fan and W. Lin and P. Van Dooren. "Normwise Scaling of Second Order Polynomial Matrices". In: SIAM J. Matrix Anal. Appl. 26 (2004), pp. 252-256. URL: https://epubs.siam.org/doi/abs/10.1137/S0895479803434914
 
-Still need to make checksingular() use cheap 1-norm from LU factorisation, verify examples, test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases
+Still need to test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases
