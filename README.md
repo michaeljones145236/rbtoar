@@ -66,7 +66,7 @@ To find 14 eigenvalues close to $69-420i$:
 ```
 To find 40 largest-magnitude eigenvalues to a low accuracy:
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, req=40, tol=1e-6, smallest=false)
+λ, V, ρ = quadEigRBTOAR(M, D, K, req=40, tol=1e-6, which=:LM)
 ```
 To print information during execution:
 ```julia
