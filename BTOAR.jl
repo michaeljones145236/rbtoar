@@ -527,13 +527,13 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         U = [[[U[1:Int(size(U,1)/2),:];zeros(size(Qᵗ,1)-size(U,1),size(U,2));U[Int(size(U,1)/2)+1:size(U,1),:]] Qᵗ];zeros(size(Qᵗ,1)-size(U,1),size(U,2)+size(Qᵗ,2))] #form new columns and rows of Uⱼ
     end
     if verb > 0
-        print("\n\n")
+        print("🟦\n\n")
     end
     return Q,U,H
 end
 
 """
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted block TOAR algorithm.
 
@@ -554,13 +554,14 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`flvd::Bool`: whether to apply Fan, Lin & Van Dooren scaling to the QEP. Default `true`.\n
  -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact. (Not implemented yet.)\n
  -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `true`. This test can be expensive and could give false positives for some QEPs.\n
+ -`give_up::Int`: how many restarts to allow before terminating in failure.\n
 
 # Returns
  -`λ::Vector`: array of Ritz values.\n
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -594,6 +595,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     end
     if which ∉ [:SM;:LM]
         @error "valid values of which are :SM and :LM"
+    end
+    if give_up < 3
+        @warn "probably best to set give_up higher than $give_up"
+    end
+    if give_up < 1
+        @error "give_up must be positive (give_up=$give_up)"
     end
 
     if rrv != 0
@@ -678,6 +685,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),maximum([step,Int(floor(req/ℓ))]),deftol=dtol,verb=verb) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
     good = 0 #number of acceptable eigenpairs computed
+    restarts = 0 #restart counter for give_up
 
     #main loop
     while true
@@ -728,6 +736,18 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
             return λ,X,ρ #we're done here
         elseif m+step*ℓ > kℓₘₐₓ #if another step could expand the subspace too far
+            if restarts == give_up
+                @warn "restart limit exceeded, not enough eigenpairs found"
+                if verb > 0
+                    print("⚠️Restart limit ($give_up) exceeded, giving up. (good eigenpairs: $good)\n\n")
+                end
+                good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
+                λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]]
+                X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
+                ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
+                return λ,X,ρ #return at least what we have
+            end
+            restarts += 1
             if verb > 0
                 print("== RESTART =="*"\n"^(3-verb)) #fancy way of getting the number of newlines right
             end
