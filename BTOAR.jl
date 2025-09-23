@@ -602,6 +602,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     if give_up < 1
         @error "give_up must be positive (give_up=$give_up)"
     end
+    if give_up > 20
+        @warn "probably best to set give_up lower than $give_up"
+    end
+    if n < 1000
+        @warn "this eigensolver is not designed for small (n < 10³) QEPs. Consider using QuadEig.jl"
+    end
 
     if rrv != 0
         @warn "refined Ritz vectors are not currently implemented"
@@ -629,20 +635,20 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     if flvd
         still_badly_scaled = maximum(abs.(log.(10,[γ*Mₙₒᵣₘ/Dₙₒᵣₘ,γ^2*Mₙₒᵣₘ/Kₙₒᵣₘ,γ*Dₙₒᵣₘ/Kₙₒᵣₘ]))) > 8 #cancelled factors of γ and excluded δ since it makes no difference
         if still_badly_scaled
-            @warn "QEP still badly scaled after Fan, Lin & Van Dooren scaling: γ²δ‖M‖₁=$(γ^2*δ*Mₙₒᵣₘ), γδ‖D‖₁=$(γ*δ*Dₙₒᵣₘ), δ‖K‖₁=$(δ*Kₙₒᵣₘ)."
+            @warn "QEP still badly scaled after Fan, Lin & Van Dooren scaling: γ²δ‖M‖₁=$(@sprintf("%.2g",γ^2*δ*Mₙₒᵣₘ)), γδ‖D‖₁=$(@sprintf("%.2g",γ*δ*Dₙₒᵣₘ)), δ‖K‖₁=$(@sprintf("%.2g",δ*Kₙₒᵣₘ))."
         end
     else
         if badly_scaled_QEP
-            @warn "QEP is badly scaled: ‖M‖₁=$Mₙₒᵣₘ, ‖D‖₁=$Dₙₒᵣₘ, ‖K‖₁=$Kₙₒᵣₘ. Consider setting flvd=true."
+            @warn "QEP is badly scaled: ‖M‖₁=$(@sprintf("%.2g",Mₙₒᵣₘ)), ‖D‖₁=$(@sprintf("%.2g",Dₙₒᵣₘ)), ‖K‖₁=$(@sprintf("%.2g",Kₙₒᵣₘ)). Consider setting flvd=true."
         end
     end
 
     if verb > 0 #some or all verbosity
         print("== SCALING INFORMATION ==\n")
         if flvd
-            print("    Fan, Lin & Van Dooren scaling applied with γ=$γ, δ=$δ.\n    Pre-scaling matrix norms:\n        ‖M‖₁=$Mₙₒᵣₘ\n        ‖D‖₁=$Dₙₒᵣₘ\n        ‖K‖₁=$Kₙₒᵣₘ\n    Scaled matrix norms:\n        γ²δ‖M‖₁=$(γ^2*δ*Mₙₒᵣₘ)\n        γδ‖D‖₁=$(γ*δ*Dₙₒᵣₘ)\n        δ‖K‖₁=$(δ*Kₙₒᵣₘ)\n\n")
+            print("    Fan, Lin & Van Dooren scaling applied with γ=$(@sprintf("%.2g",γ)), δ=$(@sprintf("%.2g",δ)).\n    Pre-scaling matrix norms:\n        ‖M‖₁=$(@sprintf("%.2g",Mₙₒᵣₘ))\n        ‖D‖₁=$(@sprintf("%.2g",Dₙₒᵣₘ))\n        ‖K‖₁=$(@sprintf("%.2g",Kₙₒᵣₘ))\n    Scaled matrix norms:\n        γ²δ‖M‖₁=$(@sprintf("%.2g",γ^2*δ*Mₙₒᵣₘ))\n        γδ‖D‖₁=$(@sprintf("%.2g",γ*δ*Dₙₒᵣₘ))\n        δ‖K‖₁=$(@sprintf("%.2g",δ*Kₙₒᵣₘ))\n\n")
         else
-            print("    No scaling applied.\n    Matrix norms:\n        ‖M‖₁=$Mₙₒᵣₘ\n        ‖D‖₁=$Dₙₒᵣₘ\n        ‖K‖₁=$Kₙₒᵣₘ\n\n")
+            print("    No scaling applied.\n    Matrix norms:\n        ‖M‖₁=$(@sprintf("%.2g",Mₙₒᵣₘ))\n        ‖D‖₁=$(@sprintf("%.2g",Dₙₒᵣₘ))\n        ‖K‖₁=$(@sprintf("%.2g",Kₙₒᵣₘ))\n\n")
         end
     end
     
