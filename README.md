@@ -95,5 +95,3 @@ doi(λ) = abs(λ) .> 1e3
 [2] C. Campos and J. E. Roman. "Restarted Q-Arnoldi-Type Methods Exploiting Symmetry in Quadratic Eigenvalue Problems". In: BIT Numerical Mathematics 56 (2016), pp. 1213–1236. URL: https://link.springer.com/article/10.1007/s10543-016-0601-5
 
 [3] H. Fan and W. Lin and P. Van Dooren. "Normwise Scaling of Second Order Polynomial Matrices". In: SIAM J. Matrix Anal. Appl. 26 (2004), pp. 252-256. URL: https://epubs.siam.org/doi/abs/10.1137/S0895479803434914
-
-Still need to test code on more problems (different shifts) and refine defaults if necessary, check stupid edge-cases
