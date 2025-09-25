@@ -1,4 +1,4 @@
-using LinearAlgebra,LowRankApprox,QuadEig
+using LinearAlgebra,LowRankApprox,QuadEig,Printf
 
 function fmean(v::Vector,f::Function,f⁻¹::Function)
     return f⁻¹(sum(f.(v))/size(v)[1])
