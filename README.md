@@ -12,18 +12,18 @@ You may have to install the following dependencies:
 
 ## Usage
 ```julia
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-12, kℓ_max::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 ```
 The function builds a second-order Krylov subspace, restarting when necessary, until the desired number of eigenpairs can be recovered with an acceptable backward error.
 
 ### Arguments
   - `M`, `D` and `K` are the mass, damping and stiffness matrices respectively from the QEP $(\lambda^2M+\lambda D+K)x=0$. These should typically be given in `SparseMatrixCSC` format, although any `AbstractMatrix` type is allowed. Strictly speaking, these are the only three required arguments, although typically you would want to specify at least `req` and `tol`.
-  - `req` is the number of eigenpairs required. This should not be set larger than half of `kℓₘₐₓ` or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs. If the domain of interest is particularly awkward, it may be beneficial to set `req` even lower in relation to `kℓₘₐₓ`.
+  - `req` is the number of eigenpairs required. This should not be set larger than half of `kℓ_max` or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs. If the domain of interest is particularly awkward, it may be beneficial to set `req` even lower in relation to `kℓ_max`.
   - `tol` is the tolerance for the backward error residual in computed eigenpairs. It is not reccommended to set this smaller than $10^{-13}$. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
 
 $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\tilde{\lambda}|^2\Vert M\Vert_1+|\tilde{\lambda}|\Vert D\Vert_1+\Vert K\Vert_1}.$$
 
-  - `kℓₘₐₓ` is the maximum subspace size the algorithm is permitted to build. This should be at least two times `req`, maybe even larger for a difficult domain of interest. However, if memory requirements are a problem, you may wish to lower `kℓₘₐₓ`. Setting this argument to a very high value has the effect of reducing the algorithm to non-restarted block TOAR.
+  - `kℓ_max` is the maximum subspace size the algorithm is permitted to build. This should be at least two times `req`, maybe even larger for a difficult domain of interest. However, if memory requirements are a problem, you may wish to lower `kℓₘₐₓ`. Setting this argument to a very high value has the effect of reducing the algorithm to non-restarted block TOAR.
   - `ℓ` is the block size/width. This should normally be set to at most 5. For larger block sizes, it might be a good idea to set `step` lower. The default value, 1, reduces the algorithm to the standard non-block restarted TOAR algorithm.
   - `step` is an optional argument specifying the minimum number of blocks to be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace.
   - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow.
@@ -39,7 +39,7 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
 
     Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting.
   - `check_singular` is whether to check if the QEP is numerically singular or not. The default value is `false`, because it is a potentially expensive test that may fail to detect nonsingularity.
-  - `give_up` specifies how many restarts to allow before terminating the algorithm without finishing, i.e. "giving up". When this happens, the algorithm will still return whatever it was able to find and raise a warning. The default is to allow (a reasonably generous) 10 restarts. If the algorithm does not succeed within 10 restarts, it is unlikely it ever will without changes to other parameters (like `req`, `tol`, `kℓₘₐₓ`) especially for low values of `tol`.
+  - `give_up` specifies how many restarts to allow before terminating the algorithm without finishing, i.e. "giving up". When this happens, the algorithm will still return whatever it was able to find and raise a warning. The default is to allow (a reasonably generous) 10 restarts. If the algorithm does not succeed within 10 restarts, it is unlikely it ever will without changes to other parameters (like `req`, `tol`, `kℓ_max`) especially for low values of `tol`.
 
 ### Returns
   - `λ`: array of approximate eigenvalues.
