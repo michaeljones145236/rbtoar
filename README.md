@@ -86,7 +86,7 @@ doi(λ) = (real.(λ) > 0) && (imag.(λ) > 0)
 ```julia
 #what could go wrong? :3
 doi(λ) = abs(λ) .> 1e3
-λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-16, req=120, kℓₘₐₓ=120, ℓ=20, dtol=1e-3, keep=doi)
+λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-16, req=120, kℓ_max=120, ℓ=20, dtol=1e-3, keep=doi)
 ```
 
 ## References
