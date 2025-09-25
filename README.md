@@ -18,26 +18,26 @@ The function builds a second-order Krylov subspace, restarting when necessary, u
 
 ### Arguments
   - `M`, `D` and `K` are the mass, damping and stiffness matrices respectively from the QEP $(\lambda^2M+\lambda D+K)x=0$. These should typically be given in `SparseMatrixCSC` format, although any `AbstractMatrix` type is allowed. Strictly speaking, these are the only three required arguments, although typically you would want to specify at least `req` and `tol`.
-  - `req` is the number of eigenpairs required. This should not be set larger than half of `kℓ_max` or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs. If the domain of interest is particularly awkward, it may be beneficial to set `req` even lower in relation to `kℓ_max`.
-  - `tol` is the tolerance for the backward error residual in computed eigenpairs. It is not reccommended to set this smaller than $10^{-13}$. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
+  - `req` is the number of eigenpairs required (default: 100). This should not be set larger than half of `kℓ_max` or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs. If the domain of interest is particularly awkward, it may be beneficial to set `req` even lower in relation to `kℓ_max`.
+  - `tol` is the tolerance for the backward error residual in computed eigenpairs. By default, it is $10^{-12}$ (relatively strict). It is not reccommended to set this smaller than $10^{-13}$. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
 
 $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\tilde{\lambda}|^2\Vert M\Vert_1+|\tilde{\lambda}|\Vert D\Vert_1+\Vert K\Vert_1}.$$
 
-  - `kℓ_max` is the maximum subspace size the algorithm is permitted to build. This should be at least two times `req`, maybe even larger for a difficult domain of interest. However, if memory requirements are a problem, you may wish to lower `kℓₘₐₓ`. Setting this argument to a very high value has the effect of reducing the algorithm to non-restarted block TOAR.
+  - `kℓ_max` is the maximum subspace size the algorithm is permitted to build. By default it is 300. This should be at least two times `req`, maybe even larger for a difficult domain of interest. However, if memory requirements are a problem, you may wish to lower `kℓ_max`. Setting this argument to a very high value has the effect of reducing the algorithm to non-restarted block TOAR.
   - `ℓ` is the block size/width. This should normally be set to at most 5. For larger block sizes, it might be a good idea to set `step` lower. The default value, 1, reduces the algorithm to the standard non-block restarted TOAR algorithm.
-  - `step` is an optional argument specifying the minimum number of blocks to be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace.
-  - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow.
+  - `step` is an optional argument specifying the minimum number of blocks to be added to the second-order Krylov subspace between each check for convergence of sufficiently many eigenpairs. Setting this too high could waste time building a larger subspace than neccessary; setting it too low could waste time solving the reduced-order QEP too many times when little progress is made enriching the subspace. `step` defaults to 10 if unspecified, which is probably unsuitable for larger block sizes.
+  - `σ` is the shift point in $\mathbb{C}$ for the shift-and-invert spectral transformation. This should normally be set to a value well within the domain of interest, or convergence of wanted eigenvalues may be slow. By default there is no shift, that is, `σ` is set to 0.
   - `which` specifies which eigenvalues to target. The default is `:SM`, which targets eigenvalues closest to `σ`. The other accepted value is `:LM`, which targets eigenvalues furthest from `σ`.
   - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
-  - `dtol` is an internal numerical tolerance for breakdown/deflation detection. Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
-  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. **Currently not implemented, has no effect.**
-  - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms.
+  - `dtol` is an internal numerical tolerance for breakdown/deflation detection (default $10^{-10}$). Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
+  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. The default is 0, equivalent to doing nothing. **Currently not implemented, has no effect.**
+  - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms. By default, scaling is always applied, as it can sometimes help a lot and is quite cheap.
   - `verb` is the level of verbosity. It can take three values:
     - `0`: no verbosity
     - `1`: some verbosity
     - `2`: full verbosity
 
-    Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting.
+    Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting. By default, `verb` is set to 0, so the function will "not speak unless asked to".
   - `check_singular` is whether to check if the QEP is numerically singular or not. The default value is `false`, because it is a potentially expensive test that may fail to detect nonsingularity.
   - `give_up` specifies how many restarts to allow before terminating the algorithm without finishing, i.e. "giving up". When this happens, the algorithm will still return whatever it was able to find and raise a warning. The default is to allow (a reasonably generous) 10 restarts. If the algorithm does not succeed within 10 restarts, it is unlikely it ever will without changes to other parameters (like `req`, `tol`, `kℓ_max`) especially for low values of `tol`.
 
@@ -49,9 +49,9 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
 ### Examples
 Basic usage example:
 ```julia
-M = rand(ComplexF64, 1000, 1000) #small dense matrices just for simple demonstration,
-D = rand(ComplexF64, 1000, 1000) #not the standard use-case
-K = rand(ComplexF64, 1000, 1000)
+M = sprand(ComplexF64, 10000, 10000,1e-3)
+D = sprand(ComplexF64, 10000, 10000,1e-3)
+K = sprand(ComplexF64, 10000, 10000,1e-3)
 
 #we ask for 30 eigenpairs with residuals below 10^-10
 #this will find those near the origin
