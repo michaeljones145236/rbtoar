@@ -533,7 +533,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
 end
 
 """
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓₘₐₓ::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓ_max::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted block TOAR algorithm.
 
@@ -541,9 +541,9 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`M::AbstractMatrix`: mass matrix from QEP.\n
  -`D::AbstractMatrix`: damping matrix from QEP.\n
  -`K::AbstractMatrix`: stiffness matrix from QEP.\n
- -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓₘₐₓ/2`. Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
+ -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓ_max/2`. Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
  -`tol::Float64`: maximum permissible backward error residual `ρ` for an eigenpair to be returned.\n
- -`kℓₘₐₓ::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set significantly larger than `req`.\n
+ -`kℓ_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set significantly larger than `req`.\n
  -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
  -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
@@ -561,7 +561,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓₘₐₓ::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -575,8 +575,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
-    if 2req > kℓₘₐₓ
-        @warn "req should not be larger than kℓₘₐₓ/2; the algorithm may stagnate"
+    if 2req > kℓ_max
+        @warn "req should not be larger than kℓ_max/2; the algorithm may stagnate"
     end
     if ℓ*step > 50
         @warn "ℓ*step = $(ℓ*step), consider setting step lower to avoid building more subspace than necessary"
@@ -727,9 +727,9 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         end
         good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
         if verb == 1
-            print("Subspace size: $m / $kℓₘₐₓ\nGood eigenpairs: $good\n\n")
+            print("Subspace size: $m / $kℓ_max\nGood eigenpairs: $good\n\n")
         elseif verb == 2
-            print("Subspace size: $m / $kℓₘₐₓ\nTotal good eigenpairs: $(sum((ρ .< tol)))\nGood eigenpairs in DoI: $good\n\n")
+            print("Subspace size: $m / $kℓ_max\nTotal good eigenpairs: $(sum((ρ .< tol)))\nGood eigenpairs in DoI: $good\n\n")
         end
 
         if good ≥ req #if we have found enough acceptable eigenpairs
@@ -741,7 +741,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
             ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
             return λ,X,ρ #we're done here
-        elseif m+step*ℓ > kℓₘₐₓ #if another step could expand the subspace too far
+        elseif m+step*ℓ > kℓ_max #if another step could expand the subspace too far
             if restarts == give_up
                 @warn "restart limit exceeded, not enough eigenpairs found"
                 if verb > 0
@@ -757,7 +757,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb > 0
                 print("== RESTART =="*"\n"^(3-verb)) #fancy way of getting the number of newlines right
             end
-            if sum(keep.(λ)) + step*ℓ > kℓₘₐₓ #if deflating by keep() would not be enough
+            if sum(keep.(λ)) + step*ℓ > kℓ_max #if deflating by keep() would not be enough
                 Q,U,H = restartBTOAR(Q,U,H,transformed_keep_deflate_distant,verb)
                 if verb == 2
                     print("Deflating according to keep() and ⅓ most distant.\n\n")
@@ -778,7 +778,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb > 0
                 print("== CONTINUING BTOAR ALGORITHM ==\n")
             end
-            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/ℓ)),Int(floor((kℓₘₐₓ-m)/ℓ))])]),ℓ;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
+            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/ℓ)),Int(floor((kℓ_max-m)/ℓ))])]),ℓ;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
         end
         m = size(Q,2)
     end
