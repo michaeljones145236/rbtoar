@@ -19,7 +19,7 @@ The function builds a second-order Krylov subspace, restarting when necessary, u
 ### Arguments
   - `M`, `D` and `K` are the mass, damping and stiffness matrices respectively from the QEP $(\lambda^2M+\lambda D+K)x=0$. These should typically be given in `SparseMatrixCSC` format, although any `AbstractMatrix` type is allowed. Strictly speaking, these are the only three required arguments, although typically you would want to specify at least `req` and `tol`.
   - `req` is the number of eigenpairs required (default: 100). This should not be set larger than half of `kℓ_max` or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs. If the domain of interest is particularly awkward, it may be beneficial to set `req` even lower in relation to `kℓ_max`.
-  - `tol` is the tolerance for the backward error residual in computed eigenpairs. By default, it is $10^{-12}$ (relatively strict). It is not reccommended to set this smaller than $10^{-13}$. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
+  - `tol` is the tolerance for the backward error residual in computed eigenpairs. By default, it is $10^{-12}$ (pretty strict). It is not reccommended to set this smaller than $10^{-13}$. Some QEPs permit finding more accurate eigenpairs than orthers; if you are not finding any "good" eigenpairs with the default `tol`, it may be that you have a difficult QEP and need to set `tol` lower. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
 
 $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\tilde{\lambda}|^2\Vert M\Vert_1+|\tilde{\lambda}|\Vert D\Vert_1+\Vert K\Vert_1}.$$
 
@@ -49,9 +49,10 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
 ### Examples
 Basic usage example:
 ```julia
-M = sprand(ComplexF64, 10000, 10000,1e-3)
-D = sprand(ComplexF64, 10000, 10000,1e-3)
-K = sprand(ComplexF64, 10000, 10000,1e-3)
+#add diagonal to make singularity unlikely
+M = sprand(ComplexF64, 10000, 10000,1e-3) + Diagonal(randn(ComplexF64,10000))
+D = sprand(ComplexF64, 10000, 10000,1e-3) + Diagonal(randn(ComplexF64,10000))
+K = sprand(ComplexF64, 10000, 10000,1e-3) + Diagonal(randn(ComplexF64,10000))
 
 #we ask for 30 eigenpairs with residuals below 10^-10
 #this will find those near the origin
@@ -71,16 +72,16 @@ To find 40 largest-magnitude eigenvalues to a low accuracy:
 ```
 To print information during execution:
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, verb=1)
+λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-10, verb=1)
 ```
 To use a larger block size:
 ```julia
-λ, V, ρ = quadEigRBTOAR(M, D, K, ℓ=4, step=3)
+λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-10, ℓ=4, step=3)
 ```
 To find eigenvalues in the top-right quadrant of $\mathbb{C}$:
 ```julia
 doi(λ) = (real.(λ) > 0) && (imag.(λ) > 0)
-λ, V, ρ = quadEigRBTOAR(M, D, K, σ=0.2+0.2im, keep=doi)
+λ, V, ρ = quadEigRBTOAR(M, D, K, tol=1e-10, σ=0.07+0.07im, keep=doi)
 ```
 **Don't** do this:
 ```julia
