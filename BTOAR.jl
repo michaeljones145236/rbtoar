@@ -533,7 +533,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
 end
 
 """
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-12, kℓ_max::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-10, kℓ_max::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted block TOAR algorithm.
 
@@ -543,7 +543,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`K::AbstractMatrix`: stiffness matrix from QEP.\n
  -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓ_max/2`. Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
  -`tol::Float64`: maximum permissible backward error residual `ρ` for an eigenpair to be returned.\n
- -`kℓ_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set significantly larger than `req`.\n
+ -`kℓ_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set it significantly larger than `req`.\n
  -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
  -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
@@ -561,7 +561,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-12,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -575,8 +575,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
-    if 2req > kℓ_max
-        @warn "req should not be larger than kℓ_max/2; the algorithm may stagnate"
+    if req > kℓ_max
+        @warn "req should not be larger than kℓ_max; the algorithm may stagnate"
     end
     if ℓ*step > 50
         @warn "ℓ*step = $(ℓ*step), consider setting step lower to avoid building more subspace than necessary"
@@ -687,6 +687,19 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     QᵀMQ = zeros(ComplexF64,0,0)
     QᵀDQ = zeros(ComplexF64,0,0)
     QᵀKQ = zeros(ComplexF64,0,0)
+    
+    #if we are using RRVs, initialise RRV quantities
+    if rrv > 0
+        MQᵀMQ = zeros(ComplexF64,0,0)
+        MQᵀDQ = zeros(ComplexF64,0,0)
+        MQᵀKQ = zeros(ComplexF64,0,0)
+        DQᵀMQ = zeros(ComplexF64,0,0)
+        DQᵀDQ = zeros(ComplexF64,0,0)
+        DQᵀKQ = zeros(ComplexF64,0,0)
+        KQᵀMQ = zeros(ComplexF64,0,0)
+        KQᵀDQ = zeros(ComplexF64,0,0)
+        KQᵀKQ = zeros(ComplexF64,0,0)
+    end
 
     Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),maximum([step,Int(floor(req/ℓ))]),deftol=dtol,verb=verb) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
@@ -704,6 +717,20 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         QᵀDQ = [QᵀDQ Q[:,1:mₗₐₛₜ]'DQ[:,mₗₐₛₜ+1:m];Q[:,mₗₐₛₜ+1:m]'DQ[:,1:mₗₐₛₜ] Q[:,mₗₐₛₜ+1:m]'DQ[:,mₗₐₛₜ+1:m]]
         KQ = [KQ K¹(Q[:,mₗₐₛₜ+1:m])]
         QᵀKQ = [QᵀKQ Q[:,1:mₗₐₛₜ]'KQ[:,mₗₐₛₜ+1:m];Q[:,mₗₐₛₜ+1:m]'KQ[:,1:mₗₐₛₜ] Q[:,mₗₐₛₜ+1:m]'KQ[:,mₗₐₛₜ+1:m]]
+        if rrv > 0
+            thing = MQ[:,1:mₗₐₛₜ]'MQ[:,mₗₐₛₜ+1:m] #couldn't think of a good variable name lol
+            MQᵀMQ = [MQᵀMQ thing;thing' MQ[:,mₗₐₛₜ+1:m]'MQ[:,mₗₐₛₜ+1:m]]
+            MQᵀDQ = [MQᵀDQ MQ[:,1:mₗₐₛₜ]'DQ[:,mₗₐₛₜ+1:m];MQ[:,mₗₐₛₜ+1:m]'DQ[:,1:mₗₐₛₜ] MQ[:,mₗₐₛₜ+1:m]'DQ[:,mₗₐₛₜ+1:m]]
+            MQᵀKQ = [MQᵀKQ MQ[:,1:mₗₐₛₜ]'KQ[:,mₗₐₛₜ+1:m];MQ[:,mₗₐₛₜ+1:m]'KQ[:,1:mₗₐₛₜ] MQ[:,mₗₐₛₜ+1:m]'KQ[:,mₗₐₛₜ+1:m]]
+            DQᵀMQ = MQᵀDQ' #take advantage of past computations (this is copied by ref, so no expensive memory copying)
+            thing = DQ[:,1:mₗₐₛₜ]'DQ[:,mₗₐₛₜ+1:m]
+            DQᵀDQ = [DQᵀDQ thing;thing' DQ[:,mₗₐₛₜ+1:m]'DQ[:,mₗₐₛₜ+1:m]]
+            DQᵀKQ = [DQᵀKQ DQ[:,1:mₗₐₛₜ]'KQ[:,mₗₐₛₜ+1:m];DQ[:,mₗₐₛₜ+1:m]'KQ[:,1:mₗₐₛₜ] DQ[:,mₗₐₛₜ+1:m]'KQ[:,mₗₐₛₜ+1:m]]
+            KQᵀMQ = MQᵀKQ'
+            KQᵀDQ = DQᵀKQ'
+            thing = KQ[:,1:mₗₐₛₜ]'KQ[:,mₗₐₛₜ+1:m]
+            KQᵀKQ = [KQᵀKQ thing;thing' KQ[:,mₗₐₛₜ+1:m]'KQ[:,mₗₐₛₜ+1:m]]
+        end
 
         #solve reduced-order problem
         LP = linearize(QᵀKQ,QᵀDQ,QᵀMQ) #linearize the QEP
@@ -727,9 +754,35 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         end
         good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
         if verb == 1
-            print("Subspace size: $m / $kℓ_max\nGood eigenpairs: $good\n\n")
+            print("Subspace size: $m / $kℓ_max\nGood eigenpairs: $good / $req\n\n")
         elseif verb == 2
-            print("Subspace size: $m / $kℓ_max\nTotal good eigenpairs: $(sum((ρ .< tol)))\nGood eigenpairs in DoI: $good\n\n")
+            print("Subspace size: $m / $kℓ_max\nTotal good eigenpairs: $(sum((ρ .< tol))) / $req\nGood eigenpairs in DoI: $good / $req\n\n")
+        end
+        
+        #Refined Ritz vector part has to be after residual calculation
+        if rrv > 0 #can't do truthiness of integers in Julia
+            if good < req #no need to do anything if we already have enough good eigenpairs
+                #################################################################################################################################################################
+                for i in 1:size(Z,2)
+                    if (ρ[i] > tol) && keep(λ[i]) #we only refine ones with bad residuals in the DoI
+                        PQᵀPQ = lu(λ[i]'^2*(λ[i]^2*MQᵀMQ + λ[i]*MQᵀDQ + MQᵀKQ) + λ[i]'*(λ[i]^2*DQᵀMQ + λ[i]*DQᵀDQ + DQᵀKQ) + λ[i]^2*KQᵀMQ + λ[i]*KQᵀDQ + KQᵀKQ)
+                        for j in 1:rrv
+                            Z[:,i] = PQᵀPQ\Z[:,i] #what could be simpler than an inverse power iteration
+                            Z[:,i] /= norm(Z[:,i]) #better not forget this lol
+                        end
+                        X[:,i] = Q*Z[:,i] #update full-size vector
+                        ρ[i] = norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ) #update residual
+                    end
+                end
+                good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
+                if verb == 1
+                    print("== REFINED RITZ VECTORS COMPUTED ==\nGood eigenpairs: $good / $req\n\n")
+                elseif verb == 2
+                    print("== REFINED RITZ VECTORS COMPUTED ==\nTotal good eigenpairs: $(sum((ρ .< tol))) / $req\nGood eigenpairs in DoI: $good / $req\n\n")
+                end
+            elseif verb == 2
+                print("Refined Ritz vectors not required.\n\n")
+            end
         end
 
         if good ≥ req #if we have found enough acceptable eigenpairs
@@ -774,6 +827,17 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             QᵀMQ = Q'*M¹(Q) #no way to avoid this cost really
             QᵀDQ = Q'*D¹(Q)
             QᵀKQ = Q'*K¹(Q)
+            if rrv > 0 #if we use RRVs we also have to form the eigenvector matrices again
+                MQᵀMQ = MQ'MQ
+                MQᵀDQ = MQ'DQ
+                MQᵀKQ = MQ'KQ
+                DQᵀMQ = MQᵀDQ' #take advantage of past computations
+                DQᵀDQ = DQ'DQ
+                DQᵀKQ = DQ'KQ
+                KQᵀMQ = MQᵀKQ' #
+                KQᵀDQ = DQᵀKQ' #
+                KQᵀKQ = KQ'KQ
+            end
         else #if we are free to grow the subspace by step
             if verb > 0
                 print("== CONTINUING BTOAR ALGORITHM ==\n")
