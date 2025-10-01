@@ -582,19 +582,19 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         @warn "ℓ*step = $(ℓ*step), consider setting step lower to avoid building more subspace than necessary"
     end
     if step < 1
-        @error "step must be positive"
+        @error "step must be positive (got $step)"
     end
     if ℓ > 5
         @warn "it is not reccommended to set ℓ greater than 5 (ℓ = $ℓ)"
     end
     if ℓ < 1
-        @error "ℓ must be positive"
+        @error "ℓ must be positive (got $ℓ)"
     end
     if (dtol > 1e-6) || (dtol < 1e-15)
         @warn "bad value for dtol (dtol = $dtol)"
     end
     if which ∉ [:SM;:LM]
-        @error "valid values of which are :SM and :LM"
+        @error "valid values of which are :SM and :LM (got $which)"
     end
     if give_up < 3
         @warn "probably best to set give_up higher than $give_up"
@@ -608,9 +608,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     if n < 1000
         @warn "this eigensolver is not designed for small (n < 10³) QEPs. Consider using QuadEig.jl"
     end
-
-    if rrv != 0
-        @warn "refined Ritz vectors are not currently implemented"
+    if rrv < 0
+        @error "rrv must be positive (got $rrv)"
     end
 
     inv = which == :SM #Fran wanted me to rename this argument
@@ -730,6 +729,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             KQᵀDQ = DQᵀKQ'
             thing = KQ[:,1:mₗₐₛₜ]'KQ[:,mₗₐₛₜ+1:m]
             KQᵀKQ = [KQᵀKQ thing;thing' KQ[:,mₗₐₛₜ+1:m]'KQ[:,mₗₐₛₜ+1:m]]
+
+            #display([opnorm(MQᵀMQ-MQ'MQ)/opnorm(MQᵀMQ);opnorm(MQᵀDQ-MQ'DQ)/opnorm(MQᵀDQ);opnorm(MQᵀKQ-MQ'KQ)/opnorm(MQᵀKQ);opnorm(DQᵀMQ-DQ'MQ)/opnorm(DQᵀMQ);opnorm(DQᵀDQ-DQ'DQ)/opnorm(DQᵀDQ);opnorm(DQᵀKQ-DQ'KQ)/opnorm(DQᵀKQ);opnorm(KQᵀMQ-KQ'MQ)/opnorm(KQᵀMQ);opnorm(KQᵀDQ-KQ'DQ)/opnorm(KQᵀDQ);opnorm(KQᵀKQ-KQ'KQ)/opnorm(KQᵀKQ)])
         end
 
         #solve reduced-order problem
@@ -762,16 +763,22 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         #Refined Ritz vector part has to be after residual calculation
         if rrv > 0 #can't do truthiness of integers in Julia
             if good < req #no need to do anything if we already have enough good eigenpairs
-                #################################################################################################################################################################
                 for i in 1:size(Z,2)
                     if (ρ[i] > tol) && keep(λ[i]) #we only refine ones with bad residuals in the DoI
-                        PQᵀPQ = lu(λ[i]'^2*(λ[i]^2*MQᵀMQ + λ[i]*MQᵀDQ + MQᵀKQ) + λ[i]'*(λ[i]^2*DQᵀMQ + λ[i]*DQᵀDQ + DQᵀKQ) + λ[i]^2*KQᵀMQ + λ[i]*KQᵀDQ + KQᵀKQ)
+                        θ = ((λ[i]/γ)-σ/γ) ^ (inv ? -1 : 1) #retransformed eigenvalue
+                        PQᵀPQ = lu(θ'^2*(θ^2*MQᵀMQ + θ*MQᵀDQ + MQᵀKQ) + θ'*(θ^2*DQᵀMQ + θ*DQᵀDQ + DQᵀKQ) + θ^2*KQᵀMQ + θ*KQᵀDQ + KQᵀKQ)
                         for j in 1:rrv
                             Z[:,i] = PQᵀPQ\Z[:,i] #what could be simpler than an inverse power iteration
                             Z[:,i] /= norm(Z[:,i]) #better not forget this lol
                         end
                         X[:,i] = Q*Z[:,i] #update full-size vector
+                        if verb == 2
+                            print("Residual before RVR: $(ρ[i])\n") #put this in verb == 2 block
+                        end
                         ρ[i] = norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ) #update residual
+                        if verb == 2
+                            print("Residual after: $(ρ[i])\n\n")
+                        end
                     end
                 end
                 good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
