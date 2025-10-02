@@ -18,7 +18,7 @@ The function builds a second-order Krylov subspace, restarting when necessary, u
 
 ### Arguments
   - `M`, `D` and `K` are the mass, damping and stiffness matrices respectively from the QEP $(\lambda^2M+\lambda D+K)x=0$. These should typically be given in `SparseMatrixCSC` format, although any `AbstractMatrix` type is allowed. Strictly speaking, these are the only three required arguments, although typically you would want to specify at least `req` and `tol`.
-  - `req` is the number of eigenpairs required (default: 100). This should be set smaller than `kℓ_max` in practically all circumstances (perhaps *much* smaller) or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs.
+  - `req` is the number of eigenpairs required (default: 100). This should be set smaller than `kℓ_max` in practically all circumstances (perhaps *much* smaller for a difficult QEP or narrow DoI) or else the algorithm may stagnate, that is, it may get stuck in a loop of expanding the subspace and restarting without ever reaching `req` eigenpairs.
   - `tol` is the tolerance for the backward error residual in computed eigenpairs. By default, it is $10^{-10}$. It is not reccommended to set this smaller than $10^{-13}$. Some QEPs permit finding more accurate eigenpairs than others; if you are not finding any "good" eigenpairs with the default `tol`, it may be that you have a difficult QEP and need to set `tol` lower. Backward error residuals of a computed eigenpair $(\tilde{\lambda},\tilde{x})$ are defined as
 
 $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\tilde{\lambda}|^2\Vert M\Vert_1+|\tilde{\lambda}|\Vert D\Vert_1+\Vert K\Vert_1}.$$
@@ -30,7 +30,7 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `which` specifies which eigenvalues to target. The default is `:SM`, which targets eigenvalues closest to `σ`. The other accepted value is `:LM`, which targets eigenvalues furthest from `σ`.
   - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
   - `dtol` is an internal numerical tolerance for breakdown/deflation detection (default $10^{-10}$). Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
-  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. The default is 0, equivalent to doing nothing. **Currently not implemented, has no effect.**
+  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. The default is 0, equivalent to doing nothing.
   - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms. By default, scaling is always applied, as it can sometimes help a lot and is quite cheap.
   - `verb` is the level of verbosity. It can take three values:
     - `0`: no verbosity
