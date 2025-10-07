@@ -768,7 +768,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
                 for i in 1:size(Z,2)
                     if (ρ[i] > tol) && keep(λ[i]) #we only refine ones with bad residuals in the DoI
                         θ = ((λ[i]/γ)-σ/γ) ^ (inv ? -1 : 1) #retransformed eigenvalue
-                        PQᵀPQ = cholesky(hermitify(θ'^2*(θ^2*MQᵀMQ + θ*MQᵀDQ + MQᵀKQ) + θ'*(θ^2*DQᵀMQ + θ*DQᵀDQ + DQᵀKQ) + θ^2*KQᵀMQ + θ*KQᵀDQ + KQᵀKQ))
+                        PQᵀPQ = factorize(hermitify(θ'^2*(θ^2*MQᵀMQ + θ*MQᵀDQ + MQᵀKQ) + θ'*(θ^2*DQᵀMQ + θ*DQᵀDQ + DQᵀKQ) + θ^2*KQᵀMQ + θ*KQᵀDQ + KQᵀKQ))
                         for j in 1:rrv
                             Z[:,i] = PQᵀPQ\Z[:,i] #what could be simpler than an inverse power iteration
                             Z[:,i] /= norm(Z[:,i]) #better not forget this lol
