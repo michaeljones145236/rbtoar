@@ -856,3 +856,4 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         m = size(Q,2)
     end
 end
+########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION
