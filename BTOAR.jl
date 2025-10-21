@@ -856,4 +856,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         m = size(Q,2)
     end
 end
-########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION
+########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION (maybe the latter might be hard...)
+########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE
+#          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not ℓ but m_{something}), perhaps there are other places where we should replace ℓ with that but it
+#          should be pretty simple to find what to replace ℓ by
+########## REMOVE ARPACK ARGUMENT LOL
