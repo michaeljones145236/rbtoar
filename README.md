@@ -49,6 +49,8 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
 ### Examples
 Basic usage example:
 ```julia
+using SparseArrays #for sprand()
+
 #add diagonal to make singularity unlikely
 M = sprand(ComplexF64, 10000, 10000, 1e-3) + Diagonal(randn(ComplexF64, 10000))
 D = sprand(ComplexF64, 10000, 10000, 1e-3) + Diagonal(randn(ComplexF64, 10000))
