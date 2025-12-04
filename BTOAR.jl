@@ -857,10 +857,10 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     end
 end
 ########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION (maybe the latter might be hard...)
-########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE
+########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*ℓ" to something)
 #          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not ℓ but m_{something}), perhaps there are other places where we should replace ℓ with that but it
 #          should be pretty simple to find what to replace ℓ by
 ########## REMOVE ARPACK ARGUMENT LOL
 ########## RESTART STRATEGY SEEMS TO BE NOT VERY OPTIMAL: One time with kℓ_max=1000 and a narrow DOI we kept deflating out almost nothing. Try to improve this -- perhaps add proportion argument for
 #          deflate_distant() and make sure that we deflate some bad residual hopeless eigenvalues in this situation
-########## KEEP A COPY OF THE BEST NUMBER OF EIGENVALUES FOUND IF IT STARTS TO GO DOWN AGAIN
+########## KEEP A COPY OF THE BEST NUMBER OF EIGENVALUES FOUND (only store good ones ofc) IF IT STARTS TO GO DOWN AGAIN
