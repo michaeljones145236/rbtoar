@@ -543,13 +543,13 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`M::AbstractMatrix`: mass matrix from QEP.\n
  -`D::AbstractMatrix`: damping matrix from QEP.\n
  -`K::AbstractMatrix`: stiffness matrix from QEP.\n
- -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓ_max/2`. Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
+ -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓ_max/2` (sometimes much lower depending on the QEP). Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
  -`tol::Float64`: maximum permissible backward error residual `ρ` for an eigenpair to be returned.\n
  -`kℓ_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set it significantly larger than `req`.\n
  -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
  -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
- -`smallest::Bool`: whether to invert the QEP. Inverting will find eigenvalues closest to `σ`, not inverting will find those furthest away. Defaults to `true`.\n
+ -`which::Symbol`: which eigenvalues to target. `:SM` will target eigenvalues closest to `σ`, `:LM` targest those furthest from `σ`. Defaults to `:SM`.\n
  -`keep::Function`: function that accepts a `ComplexF64` eigenvalue and returns whether it is within the domain of interest. Defaults to always true.\n
  -`dtol::Float64`: internal numerical tolerance for deflation/breakdown detection. Don't change this unless you know what you're doing.\n
  -`rrv::Int`: the number of inverse power iterations to use in Ritz vector refinement (default `0`). Not currently implemented.\n
@@ -557,13 +557,14 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact. (Not implemented yet.)\n
  -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `true`. This test can be expensive and could give false positives for some QEPs.\n
  -`give_up::Int`: how many restarts to allow before terminating in failure.\n
+ -`glob::Bool`: whether to store the \"best yet\" computed eigenvalues, eigenvectors and residuals in global variables `glob_λ`, `glob_X` and `glob_ρ` during execution (default `false`). This allows manual interruption of the function without losing the results.\n
 
 # Returns
  -`λ::Vector`: array of Ritz values.\n
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,arpack::Bool=true,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -705,7 +706,11 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),maximum([step,Int(floor(req/ℓ))]),deftol=dtol,verb=verb) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
     good = 0 #number of acceptable eigenpairs computed
+    good_ones = Bool[] #preallocate this as empty to avoid crash
     restarts = 0 #restart counter for give_up
+
+    global glob_λ,glob_X,glob_ρ #allows the user to interrupt without losing information
+    best_λ = ComplexF64[]; best_X = zeros(ComplexF64,n,0); best_ρ = ComplexF64[] #assign them empty just in case something was in them before
 
     #main loop
     while true
@@ -794,6 +799,17 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             end
         end
 
+        if good > size(best_λ,1)
+            if verb == 2
+                print("Found more good eigenvalues ($(sum(good_ones)) -> $good)\n\n")
+            end
+            good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
+            best_λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]] #these are global if glob is true
+            best_X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
+            best_ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
+            if glob; glob_λ = best_λ; glob_X = best_X; glob_ρ = best_ρ; end
+        end
+
         if good ≥ req #if we have found enough acceptable eigenpairs
             if verb == 2
                 print("$good good eigenpairs found, returning.")
@@ -807,13 +823,9 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if restarts == give_up
                 @warn "restart limit exceeded, not enough eigenpairs found"
                 if verb > 0
-                    print("⚠️Restart limit ($give_up) exceeded, giving up. (good eigenpairs: $good)\n\n")
+                    print("⚠️Restart limit ($give_up) exceeded, giving up. (good eigenpairs: $(size(best_λ,1)))\n\n")
                 end
-                good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
-                λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]]
-                X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
-                ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
-                return λ,X,ρ #return at least what we have
+                return best_λ,best_X,best_ρ #return at least what we have
             end
             restarts += 1
             if verb > 0
@@ -860,7 +872,6 @@ end
 ########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*ℓ" to something)
 #          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not ℓ but m_{something}), perhaps there are other places where we should replace ℓ with that but it
 #          should be pretty simple to find what to replace ℓ by
-########## REMOVE ARPACK ARGUMENT LOL
 ########## RESTART STRATEGY SEEMS TO BE NOT VERY OPTIMAL: One time with kℓ_max=1000 and a narrow DOI we kept deflating out almost nothing. Try to improve this -- perhaps add proportion argument for
 #          deflate_distant() and make sure that we deflate some bad residual hopeless eigenvalues in this situation
 ########## KEEP A COPY OF THE BEST NUMBER OF EIGENVALUES FOUND (only store good ones ofc) IF IT STARTS TO GO DOWN AGAIN
