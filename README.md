@@ -12,7 +12,7 @@ You may have to install the following dependencies:
 
 ## Usage
 ```julia
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-10, kℓ_max::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix; req::Int=100, tol::Float64=1e-10, kℓ_max::Int, ℓ::Int, step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, which::Symbol=:SM, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10, glob::Bool=false)
 ```
 The function builds a second-order Krylov subspace, restarting when necessary, until the desired number of eigenpairs can be recovered with an acceptable backward error.
 
@@ -40,10 +40,11 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
     Full verbosity can have a large performance impact, as it computes certain expensive quantities each iteration so as to provide more information for troubleshooting. By default, `verb` is set to 0, so the function will "not speak unless asked to".
   - `check_singular` is whether to check if the QEP is numerically singular or not. The default value is `false`, because it is a potentially expensive test that may fail to detect nonsingularity.
   - `give_up` specifies how many restarts to allow before terminating the algorithm without finishing, i.e. "giving up". When this happens, the algorithm will still return whatever it was able to find and raise a warning. The default is to allow (a reasonably generous) 10 restarts. If the algorithm does not succeed within 10 restarts, it is unlikely it ever will without changes to other parameters (like `req`, `tol`, `kℓ_max`) especially for low values of `tol`.
+  - `glob` is whether, at each step, to save the computed quantities `λ`, `X` and `ρ` as the global variables `glob_λ`, `glob_X`, and `glob_ρ`. The advantage of this is that execution can be interrupted without losing the aforementioned quantities. Defaults to `false`.
 
 ### Returns
   - `λ`: array of approximate eigenvalues.
-  - `V`: matrix of approximate eigenvectors (as columns).
+  - `X`: matrix of approximate eigenvectors (as columns).
   - `ρ`: array of associated backward error residuals (as defined above).
 
 ### Examples
