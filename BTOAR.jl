@@ -875,3 +875,4 @@ end
 ########## RESTART STRATEGY SEEMS TO BE NOT VERY OPTIMAL: One time with kℓ_max=1000 and a narrow DOI we kept deflating out almost nothing. Try to improve this -- perhaps add proportion argument for
 #          deflate_distant() and make sure that we deflate some bad residual hopeless eigenvalues in this situation
 ########## KEEP A COPY OF THE BEST NUMBER OF EIGENVALUES FOUND (only store good ones ofc) IF IT STARTS TO GO DOWN AGAIN
+########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol
