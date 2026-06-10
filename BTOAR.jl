@@ -22,8 +22,6 @@ hermitify(A) = (A+A')/2 #for the Cholesky factorisation, which thinks a matrix t
 
 every(λ) = true #this function is just here as the default for the keep function in quadEigRBTOAR
 
-deflate_distant(λ) = [(sum(abs(λ[i]) .< abs.(λ)) < 2*size(λ,1)/3) for i in 1:size(λ,1)] #we actually want to deflate those closest to 0 in the shifted-inverted QEP
-
 """
     BTOAR(M⁻¹::Function, D::Function, K::Function, R::Matrix{Complex{Float64}}, k::Int, deftol::Float64=NaN, verb::Int=0)
     
@@ -554,17 +552,18 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`dtol::Float64`: internal numerical tolerance for deflation/breakdown detection. Don't change this unless you know what you're doing.\n
  -`rrv::Int`: the number of inverse power iterations to use in Ritz vector refinement (default `0`). Not currently implemented.\n
  -`flvd::Bool`: whether to apply Fan, Lin & Van Dooren scaling to the QEP. Default `true`.\n
- -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact. (Not implemented yet.)\n
+ -`verb::Int`: verbosity level. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact (not fully implemented yet).\n
  -`check_singular::Bool`: whether to check if the QEP is close to being singular, default `true`. This test can be expensive and could give false positives for some QEPs.\n
  -`give_up::Int`: how many restarts to allow before terminating in failure.\n
  -`glob::Bool`: whether to store the \"best yet\" computed eigenvalues, eigenvectors and residuals in global variables `glob_λ`, `glob_X` and `glob_ρ` during execution (default `false`). This allows manual interruption of the function without losing the results.\n
+ -`extra_space::Int`: how much to allow the subspace to be slightly larger than the number of required eigenvalues. Not implemented yet, will have no effect.\n
 
 # Returns
  -`λ::Vector`: array of Ritz values.\n
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false,extra_space::Int=0)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -669,10 +668,8 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     M¹(x) = (inv ? Kₛ : Mₛ)*x
     D¹(x) = Dₛ*x #we call the functions D¹ and K¹ because the names D and K are taken
     K¹(x) = (inv ? Mₛ : Kₛ)*x
-
     
     transformed_keep(λ) = keep.((λ .- σ) .^ -1 ./ γ) #to keep the right eigenvalues regardless of spectral transformation
-    transformed_keep_deflate_distant(λ) = transformed_keep(λ) .&& deflate_distant(λ) #to keep the right eigenvalues and deflate the third most distant
     
     if verb > 0
         print("== START OF BTOAR ALGORITHM ==\n\n")
@@ -831,15 +828,25 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb > 0
                 print("== RESTART =="*"\n"^(3-verb)) #fancy way of getting the number of newlines right
             end
-            if sum(keep.(λ)) + step*ℓ > kℓ_max #if deflating by keep() would not be enough
-                Q,U,H = restartBTOAR(Q,U,H,transformed_keep_deflate_distant,verb)
-                if verb == 2
-                    print("Deflating according to keep() and ⅓ most distant.\n\n")
+            #RESTART
+            if !(false in keep.(λ)) #if all computed Ritz values are inside the DoI
+                #restart solely according to req
+                which_eigs1(λ) = [(sum(abs(λ[i]) .≤ abs.(λ)) ≤ req) for i in 1:size(λ,1)] #we actually want to remove those closest to 0 in the transformed QEP
+                Q,U,H = restartBTOAR(Q,U,H,which_eigs1,verb) #do the restart
+                if verb > 0
+                    print("All Ritz values inside DoI, restarted according to req (=$req).\n")
                 end
-            else #if deflating by keep() is enough
-                Q,U,H = restartBTOAR(Q,U,H,transformed_keep,verb)
-                if verb == 2
-                    print("Deflating only according to keep().\n\n")
+            elseif sum(keep.(λ)) ≥ req #if some Ritz values are outside DoI but there are enough inside
+                which_eigs2(λ) = [(sum((abs(λ[i]) .≤ abs.(λ)) .&& transformed_keep(λ)) ≤ req) && transformed_keep(λ)[i] for i in 1:size(λ,1)]
+                Q,U,H = restartBTOAR(Q,U,H,which_eigs2,verb) #do the restart
+                if verb > 0
+                    print("Enough Ritz values inside DoI, restarted according to req (=$req) and DoI.\n")
+                end
+            else #if there are not enough Ritz pairs inside the DoI
+                which_eigs3 = transformed_keep #just restart according to DoI only (fallback method, not quite optimal)
+                Q,U,H = restartBTOAR(Q,U,H,which_eigs3,verb) #do the restart
+                if verb > 0
+                    print("Not enough Ritz values inside DoI, restarted according to DoI (=$req).\n")
                 end
             end
             MQ = M¹(Q)
@@ -872,7 +879,4 @@ end
 ########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*ℓ" to something)
 #          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not ℓ but m_{something}), perhaps there are other places where we should replace ℓ with that but it
 #          should be pretty simple to find what to replace ℓ by
-########## RESTART STRATEGY SEEMS TO BE NOT VERY OPTIMAL: One time with kℓ_max=1000 and a narrow DOI we kept deflating out almost nothing. Try to improve this -- perhaps add proportion argument for
-#          deflate_distant() and make sure that we deflate some bad residual hopeless eigenvalues in this situation
-########## KEEP A COPY OF THE BEST NUMBER OF EIGENVALUES FOUND (only store good ones ofc) IF IT STARTS TO GO DOWN AGAIN
 ########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol
