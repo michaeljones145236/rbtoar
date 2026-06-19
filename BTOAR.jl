@@ -4,11 +4,11 @@ function fmean(v::Vector,f::Function,f⁻¹::Function)
     return f⁻¹(sum(f.(v))/size(v)[1])
 end
 
-function b(r::Union{Int,UnitRange{Int}},ℓ::Int) #function to help out with long block indices with constant block size
+function b(r::Union{Int,UnitRange{Int}},l::Int) #function to help out with long block indices with constant block size
     if typeof(r) <: Int
-        return (r-1)ℓ+1:r*ℓ
+        return (r-1)l+1:r*l
     else
-        return (minimum(r)-1)ℓ+1:maximum(r)*ℓ
+        return (minimum(r)-1)l+1:maximum(r)*l
     end
 end
 
@@ -28,10 +28,10 @@ every(λ) = true #this function is just here as the default for the keep functio
 Compute an orthogonal basis for the `k`th second-order Krylov subspace Gₖ(M⁻¹D,M⁻¹K;R).
 
 # Arguments
- -`M⁻¹::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the inverse of M.\n
- -`D::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the matrix D.\n
- -`K::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the matrix K.\n
- -`R::Matrix{Complex{Float64}}`: starting `n`×`ℓ` block vector R.\n
+ -`M⁻¹::Function`: function that provides left-multiplication of `n`×`l` matrices by the inverse of M.\n
+ -`D::Function`: function that provides left-multiplication of `n`×`l` matrices by the matrix D.\n
+ -`K::Function`: function that provides left-multiplication of `n`×`l` matrices by the matrix K.\n
+ -`R::Matrix{Complex{Float64}}`: starting `n`×`l` block vector R.\n
  -`k::Int`: degree of the second-order Krylov subspace Gₖ(A,B;R) required.\n
  -`deftol::Float64`: internal numerical tolerance for deflation detection, defaults to `1e-10`.\n
  -`verb::Int`: level of verbosity. 0: no verbosity, 1: some verbosity, 2: full verbosity. `verb=2` has a large performance impact.\n
@@ -45,21 +45,21 @@ Compute an orthogonal basis for the `k`th second-order Krylov subspace Gₖ(M⁻
  -`ρ₃::Float64`: 1-norm TOAR relation residual ‖[A B;I 0]*(`I₂`⊗`Qₖ₋₁`)`Uₖ₋₁` - (`I₂`⊗`Qₖ`)`UₖHₖ`‖₁ / ‖(`I₂`⊗`Qₖ`)`UₖHₖ`‖₁.\n
 """
 function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol::Float64=NaN,verb::Int=0)
-    n,ℓ = size(R) #n and ℓ are not function arguments, but are taken implicitly from R
+    n,l = size(R) #n and l are not function arguments, but are taken implicitly from R
 
     if deftol ≡ NaN #if deftol isn't set, we give it a reasonable default
-        deftol = ℓ*eps(Float64) #machine epsilon times the smallest dimension of the matrix is a standard numerical rank tolerance
+        deftol = l*eps(Float64) #machine epsilon times the smallest dimension of the matrix is a standard numerical rank tolerance
     end
     if deftol < eps(Float64) #warning about setting deflation tolerance too low
         @warn "deftol should not be set lower than ϵ≈2.22×10⁻¹⁶ (deftol=$deftol)\nSetting deftol to ϵ"
         deftol = eps(Float64)
     end
     if deftol ≥ 1.0 #not sure what the highest reasonable deftol would be
-        @warn "deftol way too large (deftol=$deftol)\nSetting deftol to ϵℓ=$(ℓ*eps(Float64))"
-        deftol = ℓ*eps(Float64)
+        @warn "deftol way too large (deftol=$deftol)\nSetting deftol to ϵl=$(l*eps(Float64))"
+        deftol = l*eps(Float64)
     end
-    if k*ℓ > n #warning about setting k too large
-        @warn "kℓ greater than n, expect deflation (kℓ = $(k*ℓ), n = $n)"
+    if k*l > n #warning about setting k too large
+        @warn "kl greater than n, expect deflation (kl = $(k*l), n = $n)"
     end
     if verb > 2
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 2"
@@ -71,25 +71,25 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
     end
     
     m = zeros(Int,k) #we preallocate the array of ranks of Rⱼ-QⱼSⱼ (note that m[1] is m₀, not m₁)
-    m[1] = rank(R[1:ℓ,:],rtol=deftol) #to save time, we start by taking the rank of a small full-width submatrix of R
-    if m[1] < ℓ #if the small full-width submatrix was rank deficient (unlikely most of the time) 
+    m[1] = rank(R[1:l,:],rtol=deftol) #to save time, we start by taking the rank of a small full-width submatrix of R
+    if m[1] < l #if the small full-width submatrix was rank deficient (unlikely most of the time) 
         m[1] = rank(R,rtol=deftol) #test the rank of the full block vector R
-        if m[1] < ℓ #if R is rank-deficient
+        if m[1] < l #if R is rank-deficient
             R = Matrix(rrqr(R)[1]) #we reduce R to an orthonormal matrix with the same span, using the RRQR factorisation
-            ℓ = m[1] #the new ℓ after R has been reduced
+            l = m[1] #the new l after R has been reduced
             if verb > 0
-                print("Starting vector R rank deficient, reducing ℓ to $ℓ\n")
+                print("Starting vector R rank deficient, reducing l to $l\n")
             end
         end
     end
     Q,R = qr(R) #standard QR factorisation because R now must be full-rank
     Qⱼ = Matrix{ComplexF64}(Q) #qr() outputs Q in a special form without explicitly forming the matrix, so we have to tell it to
-    Uⱼ = [I(ℓ);zeros(Complex{Float64},ℓ,ℓ)] #because V₁ = [Q₁;0]
-    Hₖ = zeros(Complex{Float64},k*ℓ,(k-1)*ℓ) #we can preallocate H because its final size is known now
+    Uⱼ = [I(l);zeros(Complex{Float64},l,l)] #because V₁ = [Q₁;0]
+    Hₖ = zeros(Complex{Float64},k*l,(k-1)*l) #we can preallocate H because its final size is known now
     
     for j in 1:k-1 #main for loop
-        Rⱼ = M⁻¹(D(Qⱼ*-Uⱼ[1:sum(m),(j-1)ℓ+1:j*ℓ]) + K(Qⱼ*-Uⱼ[sum(m)+1:2sum(m),(j-1)ℓ+1:j*ℓ])) #take next Rⱼ block vector
-        Sⱼ = zeros(Complex{Float64},sum(m[1:j]),ℓ) #preallocate Sⱼ
+        Rⱼ = M⁻¹(D(Qⱼ*-Uⱼ[1:sum(m),(j-1)l+1:j*l]) + K(Qⱼ*-Uⱼ[sum(m)+1:2sum(m),(j-1)l+1:j*l])) #take next Rⱼ block vector
+        Sⱼ = zeros(Complex{Float64},sum(m[1:j]),l) #preallocate Sⱼ
         for i in 1:sum(m[1:j]) #doing it this way seems to greatly reduce error for Ansys QEPs
             Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
             Rⱼ -= Qⱼ[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
@@ -101,7 +101,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         end
         Qʰ,Rʰ = rrqr(Rⱼ,deftol) #MIGHT WANT TO DO CHEAP RANK TEST HERE FOR EFFICIENCY DEPENDING ON PERFORMANCE OF RRQR
         m[j+1] = size(Qʰ,2) #record the rank of Rⱼ-Qⱼ*Sⱼ
-        if m[j+1] < ℓ #if we have deflation
+        if m[j+1] < l #if we have deflation
             if verb == 1 #if we have medium verbosity
                 print("🟨j=$j,mⱼ=$(m[j+1])\n") #tell the user
             elseif verb == 2 #if we have high verbosity
@@ -133,21 +133,21 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             print("🟩") #just a green square with no newline character
         end
         Qⱼ = [Qⱼ Qʰ] #append the newly computed columns to Qⱼ
-        Uʰ = Uⱼ[1:sum(m[1:j]),(j-1)ℓ+1:j*ℓ] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
+        Uʰ = Uⱼ[1:sum(m[1:j]),(j-1)l+1:j*l] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
         for i = 1:j #second-level orthogonalisation
-            Hₖ[(i-1)ℓ+1:i*ℓ,(j-1)ℓ+1:j*ℓ] = Uⱼ[1:sum(m[1:j]),(i-1)ℓ+1:i*ℓ]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)ℓ+1:i*ℓ]'*Uʰ #fill in new block column of Hₖ
-            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)ℓ+1:i*ℓ]*Hₖ[(i-1)ℓ+1:i*ℓ,(j-1)ℓ+1:j*ℓ] #orthogonalise Sⱼ against Uⱼ,₁
-            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)ℓ+1:i*ℓ]*Hₖ[(i-1)ℓ+1:i*ℓ,(j-1)ℓ+1:j*ℓ] #and Uʰ against Uⱼ,₂
+            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Uʰ #fill in new block column of Hₖ
+            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #orthogonalise Sⱼ against Uⱼ,₁
+            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #and Uʰ against Uⱼ,₂
         end
         for i = 1:j #second-level reorthogonalisation
-            Hᵣₑₛ = Uⱼ[1:sum(m[1:j]),(i-1)ℓ+1:i*ℓ]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)ℓ+1:i*ℓ]'*Uʰ #not the full residual
-            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)ℓ+1:i*ℓ]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
-            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)ℓ+1:i*ℓ]*Hᵣₑₛ #and Uʰ against Uⱼ,₂
-            Hₖ[(i-1)ℓ+1:i*ℓ,(j-1)ℓ+1:j*ℓ] += Hᵣₑₛ #correct block column of Hₖ
+            Hᵣₑₛ = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Uʰ #not the full residual
+            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
+            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]*Hᵣₑₛ #and Uʰ against Uⱼ,₂
+            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] += Hᵣₑₛ #correct block column of Hₖ
         end
         Qᵗ,Rᵗ = qr([Sⱼ;Rʰ;Uʰ]) #standard QR factorisation, not RRQR
         Qᵗ = Matrix(Qᵗ) #we must force explicit formation of Qᵗ
-        if rank(Rᵗ,rtol=deftol) < ℓ #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
+        if rank(Rᵗ,rtol=deftol) < l #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
             if verb == 2
                 rk = rank(Rᵗ,rtol=deftol)
                 print("🟥Breakdown at j=$j (rank=$rk)\n")
@@ -157,11 +157,11 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             @warn "breakdown at j=$j, returning only Qⱼ" #warn the user, to prevent silent failure from causing problems
             return Qⱼ,nothing,nothing,nothing,nothing,nothing #return Qⱼ because it might still be useful (probably not)
         end
-        Hₖ[j*ℓ+1:(j+1)ℓ,(j-1)ℓ+1:j*ℓ] = Rᵗ #fill in bottom-right block entry of Hₖ
-        Uⱼ = [[[Uⱼ[1:sum(m[1:j]),:];zeros(m[j+1],j*ℓ);Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),:]] Qᵗ];zeros(m[j+1],(j+1)ℓ)] #form new columns and rows of Uⱼ
+        Hₖ[j*l+1:(j+1)l,(j-1)l+1:j*l] = Rᵗ #fill in bottom-right block entry of Hₖ
+        Uⱼ = [[[Uⱼ[1:sum(m[1:j]),:];zeros(m[j+1],j*l);Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),:]] Qᵗ];zeros(m[j+1],(j+1)l)] #form new columns and rows of Uⱼ
         if verb == 2
             print("TOAR relation residual: ")
-            display(opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*ℓ]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*ℓ])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*ℓ]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)ℓ,1:j*ℓ],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)ℓ,1:j*ℓ],1)) #this was soul-crushing to debug
+            display(opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*l])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1)) #this was soul-crushing to debug
             print("Qⱼ residual: ")
             display(opnorm(Qⱼ'*Qⱼ-I,1))
             print("Uⱼ residual: ")
@@ -172,7 +172,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
     j = k-1 #rather than going through the expression for ρ₃ and changing every j to k-1, I just set this and copy-paste it
     ρ₁ = opnorm(Qⱼ'*Qⱼ-I,1) # }
     ρ₂ = opnorm(Uⱼ'*Uⱼ-I,1) # } - these two residuals are easier to type out than ρ₃
-    ρ₃ = opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*ℓ]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*ℓ])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*ℓ]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)ℓ,1:j*ℓ],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)ℓ,1:j*ℓ],1) #this was soul-crushing to debug
+    ρ₃ = opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*l])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) #this was soul-crushing to debug
     if verb == 1
         print("🟦\nTOAR relation residual: ")
         display(ρ₃)
@@ -188,7 +188,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
 end
 
 """
-    quadEigBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, k::Int, ℓ::Int; σ::Union{Float64,Complex{Float64}}=0.0+0.0im, inv::Bool=true, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
+    quadEigBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, k::Int, l::Int; σ::Union{Float64,Complex{Float64}}=0.0+0.0im, inv::Bool=true, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false)
     
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR algorithm.
 
@@ -197,7 +197,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR a
  -`D::AbstractMatrix`: damping matrix of the QEP.\n
  -`K::AbstractMatrix`: stiffness matrix of the QEP.\n
  -`k::Int`: number of block TOAR iterations.\n
- -`ℓ::Int`: block size/width.\n
+ -`l::Int`: block size/width.\n
  -`σ::Union{Float64,Complex{Float64}}`: spectral transformation shift to use (default `0`).\n
  -`inv::Bool`: whether to use spectral inversion (default yes).\n
  -`dtol::Float64`: optional internal numerical deflation/breakdown tolerance for BTOAR.\n
@@ -211,7 +211,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the block TOAR a
  -`V::Matrix{ComplexF64}`: Array of Ritz vectors (approximate eigenvectors).\n
  -`ρ::Vector{ComplexF64}`: Array of backward error residuals for the eigenpairs.\n
 """
-function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::Int,ℓ::Int;σ::Union{Float64,Complex{Float64}}=0.0+0.0im,inv::Bool=true,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
+function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::Int,l::Int;σ::Union{Float64,Complex{Float64}}=0.0+0.0im,inv::Bool=true,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -283,7 +283,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     if verb > 0
         print("== BTOAR ALGORITHM ==\n\n")
     end
-    Qₖ,_,_,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),k,deftol=dtol,verb=verb) #run the BTOAR algorithm
+    Qₖ,_,_,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),k,deftol=dtol,verb=verb) #run the BTOAR algorithm
     m = size(Qₖ,2) #there might have been deflations
     
     if false #rrv (temporary bodge)
@@ -303,7 +303,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     λ,V = eigen(LP.A,LP.B) #generalised eigenproblem solver
     if false #rrv (temporary bodge)
         MQₖᵀMQₖ = MQₖ'MQₖ #pre-form matrices for faster formation of PQ
-        MQₖᵀDQₖ = MQₖ'DQₖ #these multiplications are (kℓ×n)(n×kℓ)
+        MQₖᵀDQₖ = MQₖ'DQₖ #these multiplications are (kl×n)(n×kl)
         MQₖᵀKQₖ = MQₖ'KQₖ
         DQₖᵀMQₖ = DQₖ'MQₖ
         DQₖᵀDQₖ = DQₖ'DQₖ
@@ -312,7 +312,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
         KQₖᵀDQₖ = KQₖ'DQₖ
         KQₖᵀKQₖ = KQₖ'KQₖ
         for i in 1:2m
-            #additions here are only of kℓ×kℓ matrices (cheap)
+            #additions here are only of kl×kl matrices (cheap)
             PQᵀPQ = λ[i]'^2*(λ[i]^2*MQₖᵀMQₖ + λ[i]*MQₖᵀDQₖ + MQₖᵀKQₖ) + λ[i]'*(λ[i]^2*DQₖᵀMQₖ + λ[i]*DQₖᵀDQₖ + DQₖᵀKQₖ) + λ[i]^2*KQₖᵀMQₖ + λ[i]*KQₖᵀDQₖ + KQₖᵀKQₖ #matrix to find least dominant right singular vector of
             Z[:,i] = arpack ? eigs(PQᵀPQ,nev=1,which=:LM,ritzvec=true,v0=V[1:m,i],sigma=0.0,tol=1e-50)[2] : svd(λ[i]^2*MQₖ + λ[i]*DQₖ + KQₖ).V[:,m]
         end
@@ -381,15 +381,15 @@ function restartBTOAR(Q□::Matrix,U□::Matrix,H□::Matrix,keep::Function,verb
     
     #determine some constants implicitly
     p = sum(keep(schurfact.values))
-    ℓ = size(H□,1)-size(H□,2)
+    l = size(H□,1)-size(H□,2)
     
     Hₚ₊₁ = [schurfact.T[1:p,1:p];H□[size(H□,2)+1:size(H□,1),:]*schurfact.Z[:,1:p]] #form new H
     
     U□⁽¹⁾ = U□[1:size(Q□,2),:] #deconstruct U□ for readability
     U□⁽²⁾ = U□[size(Q□,2)+1:2size(Q□,2),:]
-    U,Σ,V = psvd([[U□⁽¹⁾[1:size(U□⁽¹⁾,1)-ℓ,1:size(U□,2)-ℓ]*schurfact.Z[:,1:p];zeros(ℓ,p)] U□⁽¹⁾[:,size(U□,2)-ℓ+1:size(U□,2)] [U□⁽²⁾[1:size(U□⁽²⁾,1)-ℓ,1:size(U□,2)-ℓ]*schurfact.Z[:,1:p];zeros(ℓ,p)] U□⁽²⁾[:,size(U□,2)-ℓ+1:size(U□,2)]],rank=p+2ℓ) #that took a while to type
+    U,Σ,V = psvd([[U□⁽¹⁾[1:size(U□⁽¹⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽¹⁾[:,size(U□,2)-l+1:size(U□,2)] [U□⁽²⁾[1:size(U□⁽²⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽²⁾[:,size(U□,2)-l+1:size(U□,2)]],rank=p+2l) #that took a while to type
     
-    Uₚ₊₁ = kron(I(2),Diagonal(Σ))*[V'[:,1:p+ℓ];V'[:,p+ℓ+1:2(p+ℓ)]]
+    Uₚ₊₁ = kron(I(2),Diagonal(Σ))*[V'[:,1:p+l];V'[:,p+l+1:2(p+l)]]
     
     Qᵣ = Q□*U #dominant flop cost
     
@@ -402,19 +402,19 @@ function restartBTOAR(Q□::Matrix,U□::Matrix,H□::Matrix,keep::Function,verb
 end
 
 """
-    continueBTOAR(M⁻¹::Function, D::Function, K::Function, Qᵣ::Matrix{Complex{Float64}}, Uₚ₊₁::Matrix{Complex{Float64}}, Hₚ₊₁::Matrix{Complex{Float64}}, k::Int, ℓ::Int; deftol::Float64=1e-10)
+    continueBTOAR(M⁻¹::Function, D::Function, K::Function, Qᵣ::Matrix{Complex{Float64}}, Uₚ₊₁::Matrix{Complex{Float64}}, Hₚ₊₁::Matrix{Complex{Float64}}, k::Int, l::Int; deftol::Float64=1e-10)
 
 Continue the BTOAR algorithm after a restart.
 
 # Arguments
- -`M⁻¹::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the inverse of M.\n
- -`D::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the matrix D.\n
- -`K::Function`: function that provides left-multiplication of `n`×`ℓ` matrices by the matrix K.\n
+ -`M⁻¹::Function`: function that provides left-multiplication of `n`×`l` matrices by the inverse of M.\n
+ -`D::Function`: function that provides left-multiplication of `n`×`l` matrices by the matrix D.\n
+ -`K::Function`: function that provides left-multiplication of `n`×`l` matrices by the matrix K.\n
  -`Qᵣ::Matrix{Complex{Float64}}`: locked second-order Krylov basis.\n
  -`Uₚ₊₁::Matrix{Complex{Float64}}`: locked auxiliary matrix.\n
  -`Hₚ₊₁::Matrix{Complex{Float64}}`: locked auxiliary matrix.\n
  -`k::Int`: number of new blocks to add to the subspace.\n
- -`ℓ::Int`: block size/width.\n
+ -`l::Int`: block size/width.\n
  -`deftol::Float64`: internal numerical tolerance for deflation detection, defaults to `1e-10`.\n
  -`verb::Int`: verbosity option. 0: no verbosity, 1: some verbosity, 2: full verbosity. Full verbosity has a large performance impact.\n
 
@@ -423,7 +423,7 @@ Continue the BTOAR algorithm after a restart.
  -`U::Matrix`: auxiliary matrix.\n
  -`H::Matrix`: auxiliary matrix.\n
 """
-function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,Uₚ₊₁::Matrix,Hₚ₊₁::Matrix,k::Int,ℓ::Int;deftol::Float64=1e-10,verb::Int=0)
+function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,Uₚ₊₁::Matrix,Hₚ₊₁::Matrix,k::Int,l::Int;deftol::Float64=1e-10,verb::Int=0)
     n = size(Qᵣ,1) #take n implicitly
     
     if deftol < eps(Float64) #warning about setting deflation tolerance too low
@@ -431,11 +431,11 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         deftol = eps(Float64)
     end
     if deftol ≥ 1.0 #not sure what the highest reasonable deftol would be
-        @warn "deftol way too large (deftol=$deftol)\nSetting deftol to ϵℓ=$(ℓ*eps(Float64))"
-        deftol = ℓ*eps(Float64)
+        @warn "deftol way too large (deftol=$deftol)\nSetting deftol to ϵl=$(l*eps(Float64))"
+        deftol = l*eps(Float64)
     end
-    if k*ℓ+size(Qᵣ,2) > n #warning about setting k too large
-        @warn "kℓ+r greater than n, expect deflation (kℓ+r = $(k*ℓ+size(Qᵣ,2)), n = $n)"
+    if k*l+size(Qᵣ,2) > n #warning about setting k too large
+        @warn "kl+r greater than n, expect deflation (kl+r = $(k*l+size(Qᵣ,2)), n = $n)"
     end
     if verb > 2
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 2"
@@ -452,8 +452,8 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
     H = Matrix{ComplexF64}(Hₚ₊₁)
     
     for j in 1:k #main for loop
-        Rⱼ = M⁻¹(D(Q*-U[1:Int(size(U,1)/2),size(U,2)-ℓ+1:size(U,2)]) + K(Q*-U[Int(size(U,1)/2)+1:size(U,1),size(U,2)-ℓ+1:size(U,2)])) #take next Rⱼ block vector
-        Sⱼ = zeros(Complex{Float64},size(Q,2),ℓ) #preallocate Sⱼ
+        Rⱼ = M⁻¹(D(Q*-U[1:Int(size(U,1)/2),size(U,2)-l+1:size(U,2)]) + K(Q*-U[Int(size(U,1)/2)+1:size(U,1),size(U,2)-l+1:size(U,2)])) #take next Rⱼ block vector
+        Sⱼ = zeros(Complex{Float64},size(Q,2),l) #preallocate Sⱼ
         for i in 1:size(Q,2) #doing it this way seems to greatly reduce error for Ansys QEPs
             Sⱼ[i:i,:] = Q[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
             Rⱼ -= Q[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
@@ -465,7 +465,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         end
         Qʰ,Rʰ = rrqr(Rⱼ,deftol) #MIGHT WANT TO DO CHEAP RANK TEST HERE FOR EFFICIENCY DEPENDING ON PERFORMANCE OF RRQR
         m = size(Qʰ,2) #record the rank of Rⱼ-Qⱼ*Sⱼ
-        if m < ℓ #if we have deflation
+        if m < l #if we have deflation
             if verb == 1 #if we have medium verbosity
                 print("🟨j=$j,mⱼ=$m\n") #tell the user
             elseif verb == 2 #if we have high verbosity
@@ -498,22 +498,22 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         end
         
         Q = [Q Qʰ] #append the newly computed columns to Qⱼ
-        Uʰ = U[1:Int(size(U,1)/2),size(U,2)-ℓ+1:size(U,2)] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
-        H = [H zeros(size(H,1),ℓ);zeros(ℓ,size(H,2)) zeros(ℓ,ℓ)] #expand H (zeros for now)
+        Uʰ = U[1:Int(size(U,1)/2),size(U,2)-l+1:size(U,2)] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
+        H = [H zeros(size(H,1),l);zeros(l,size(H,2)) zeros(l,l)] #expand H (zeros for now)
         for i = 1:size(U,2) #second-level orthogonalisation
-            H[i:i,size(H,2)-ℓ+1:size(H,2)] = U[1:Int(size(U,1)/2),i:i]'*Sⱼ + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #fill in new block column of Hₖ
-            Sⱼ -= U[1:Int(size(U,1)/2),i:i]*H[i:i,size(H,2)-ℓ+1:size(H,2)] #orthogonalise Sⱼ against Uⱼ,₁
-            Uʰ -= U[Int(size(U,1)/2)+1:size(U,1),i:i]*H[i:i,size(H,2)-ℓ+1:size(H,2)] #and Uʰ against Uⱼ,₂
+            H[i:i,size(H,2)-l+1:size(H,2)] = U[1:Int(size(U,1)/2),i:i]'*Sⱼ + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #fill in new block column of Hₖ
+            Sⱼ -= U[1:Int(size(U,1)/2),i:i]*H[i:i,size(H,2)-l+1:size(H,2)] #orthogonalise Sⱼ against Uⱼ,₁
+            Uʰ -= U[Int(size(U,1)/2)+1:size(U,1),i:i]*H[i:i,size(H,2)-l+1:size(H,2)] #and Uʰ against Uⱼ,₂
         end
         for i = 1:size(U,2) #second-level reorthogonalisation
             Hᵣₑₛ = U[1:Int(size(U,1)/2),i:i]'*Sⱼ + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #not the full residual
             Sⱼ -= U[1:Int(size(U,1)/2),i:i]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
             Uʰ -= U[Int(size(U,1)/2)+1:size(U,1),i:i]*Hᵣₑₛ #and Uʰ against Uⱼ,₂
-            H[i:i,size(H,2)-ℓ+1:size(H,2)] += Hᵣₑₛ #correct block column of Hₖ
+            H[i:i,size(H,2)-l+1:size(H,2)] += Hᵣₑₛ #correct block column of Hₖ
         end
         Qᵗ,Rᵗ = qr([Sⱼ;Rʰ;Uʰ]) #standard QR factorisation, not RRQR
         Qᵗ = Matrix(Qᵗ) #we must force explicit formation of Qᵗ
-        if rank(Rᵗ,rtol=deftol) < ℓ #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
+        if rank(Rᵗ,rtol=deftol) < l #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
             if verb == 2
                 rk = rank(Rᵗ,rtol=deftol)
                 print("🟥Breakdown at j=$j (rank=$rk)\n")
@@ -523,7 +523,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
             @warn "breakdown at j=$j, returning only Qⱼ" #warn the user, to prevent silent failure from causing problems
             return Q,nothing,nothing #return Qⱼ because it might still be useful (probably not)
         end
-        H[size(H,1)-ℓ+1:size(H,1),size(H,2)-ℓ+1:size(H,2)] = Rᵗ #fill in bottom-right block entry of Hₖ
+        H[size(H,1)-l+1:size(H,1),size(H,2)-l+1:size(H,2)] = Rᵗ #fill in bottom-right block entry of Hₖ
         U = [[[U[1:Int(size(U,1)/2),:];zeros(size(Qᵗ,1)-size(U,1),size(U,2));U[Int(size(U,1)/2)+1:size(U,1),:]] Qᵗ];zeros(size(Qᵗ,1)-size(U,1),size(U,2)+size(Qᵗ,2))] #form new columns and rows of Uⱼ
     end
     if verb > 0
@@ -533,7 +533,7 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
 end
 
 """
-    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-10, kℓ_max::Int, ℓ::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
+    quadEigRBTOAR(M::AbstractMatrix, D::AbstractMatrix, K::AbstractMatrix, req::Int=100, tol::Float64=1e-10, kl_max::Int, l::Int; step::Int=10, σ::Union{Float64,ComplexF64}=0.0+0.0im, smallest::Bool=true, keep::Function=every, dtol::Float64=1e-10, rrv::Int=0, flvd::Bool=true, verb::Int=0, check_singular::Bool=false, give_up::Int=10)
 
 Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted block TOAR algorithm.
 
@@ -541,11 +541,11 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`M::AbstractMatrix`: mass matrix from QEP.\n
  -`D::AbstractMatrix`: damping matrix from QEP.\n
  -`K::AbstractMatrix`: stiffness matrix from QEP.\n
- -`req::Int`: required number of eigenpairs. Make sure this is at most `kℓ_max/2` (sometimes much lower depending on the QEP). Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
+ -`req::Int`: required number of eigenpairs. Make sure this is at most `kl_max/2` (sometimes much lower depending on the QEP). Note that the number of returned eigenpairs will often be slightly larger than `req`.\n
  -`tol::Float64`: maximum permissible backward error residual `ρ` for an eigenpair to be returned.\n
- -`kℓ_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set it significantly larger than `req`.\n
- -`ℓ::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
- -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `ℓ`.\n
+ -`kl_max::Int`: maximum subspace size before restart. Defaults to `300`, reduce this if memory consumption is an issue but set it significantly larger than `req`.\n
+ -`l::Int`: block size/width. Defaults to `1`. It is not advised to set this higher than `5`.\n
+ -`step::Int`: minimum number of blocks to add to the subspace between checks for convergence. Defaults to `10`, you may wish to set this lower for a higher `l`.\n
  -`σ::Union{Float64,ComplexF64}`: shift point for shift-and-invert transformation. Defaults to `0.0`. Should be set within the domain of interest.\n
  -`which::Symbol`: which eigenvalues to target. `:SM` will target eigenvalues closest to `σ`, `:LM` targest those furthest from `σ`. Defaults to `:SM`.\n
  -`keep::Function`: function that accepts a `ComplexF64` eigenvalue and returns whether it is within the domain of interest. Defaults to always true.\n
@@ -563,7 +563,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kℓ_max::Int=300,ℓ::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false,extra_space::Int=0)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kl_max::Int=300,l::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false,extra_space::Int=0)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -577,20 +577,20 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
-    if req > kℓ_max
-        @warn "req should not be larger than kℓ_max; the algorithm may stagnate"
+    if req > kl_max
+        @warn "req should not be larger than kl_max; the algorithm may stagnate"
     end
-    if ℓ*step > 50
-        @warn "ℓ*step = $(ℓ*step), consider setting step lower to avoid building more subspace than necessary"
+    if l*step > 50
+        @warn "l*step = $(l*step), consider setting step lower to avoid building more subspace than necessary"
     end
     if step < 1
         @error "step must be positive (got $step)"
     end
-    if ℓ > 5
-        @warn "it is not reccommended to set ℓ greater than 5 (ℓ = $ℓ)"
+    if l > 5
+        @warn "it is not reccommended to set l greater than 5 (l = $l)"
     end
-    if ℓ < 1
-        @error "ℓ must be positive (got $ℓ)"
+    if l < 1
+        @error "l must be positive (got $l)"
     end
     if (dtol > 1e-6) || (dtol < 1e-15)
         @warn "bad value for dtol (dtol = $dtol)"
@@ -700,7 +700,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         KQᵀKQ = zeros(ComplexF64,0,0)
     end
 
-    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,ℓ),maximum([step,Int(floor(req/ℓ))]),deftol=dtol,verb=verb) #initialise by building extra large step
+    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),maximum([step,Int(floor(req/l))]),deftol=dtol,verb=verb) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
     good = 0 #number of acceptable eigenpairs computed
     good_ones = Bool[] #preallocate this as empty to avoid crash
@@ -759,9 +759,9 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         end
         good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
         if verb == 1
-            print("Subspace size: $m / $kℓ_max\nGood eigenpairs: $good / $req\n\n")
+            print("Subspace size: $m / $kl_max\nGood eigenpairs: $good / $req\n\n")
         elseif verb == 2
-            print("Subspace size: $m / $kℓ_max\nTotal good eigenpairs: $(sum((ρ .< tol))) / $req\nGood eigenpairs in DoI: $good / $req\n\n")
+            print("Subspace size: $m / $kl_max\nTotal good eigenpairs: $(sum((ρ .< tol))) / $req\nGood eigenpairs in DoI: $good / $req\n\n")
         end
         
         #Refined Ritz vector part has to be after residual calculation
@@ -800,7 +800,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb == 2
                 print("Found more good eigenvalues ($(sum(good_ones)) -> $good)\n\n")
             end
-            good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
+            good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kl)
             best_λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]] #these are global if glob is true
             best_X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
             best_ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
@@ -811,12 +811,12 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb == 2
                 print("$good good eigenpairs found, returning.")
             end
-            good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kℓ)
+            good_ones = (ρ .< tol) .&& keep.(λ) #basically nothing to recompute this: O(kl)
             λ = [λ[i] for i in 1:size(λ,1) if good_ones[i]]
             X = hcat([X[:,i] for i in 1:size(X,2) if good_ones[i]]...)
             ρ = [ρ[i] for i in 1:size(ρ,1) if good_ones[i]]
             return λ,X,ρ #we're done here
-        elseif m+step*ℓ > kℓ_max #if another step could expand the subspace too far
+        elseif m+step*l > kl_max #if another step could expand the subspace too far
             if restarts == give_up
                 @warn "restart limit exceeded, not enough eigenpairs found"
                 if verb > 0
@@ -870,13 +870,13 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb > 0
                 print("== CONTINUING BTOAR ALGORITHM ==\n")
             end
-            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/ℓ)),Int(floor((kℓ_max-m)/ℓ))])]),ℓ;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
+            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/l)),Int(floor((kl_max-m)/l))])]),l;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
         end
         m = size(Q,2)
     end
 end
 ########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION (maybe the latter might be hard...)
-########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*ℓ" to something)
-#          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not ℓ but m_{something}), perhaps there are other places where we should replace ℓ with that but it
-#          should be pretty simple to find what to replace ℓ by
+########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*l" to something)
+#          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not l but m_{something}), perhaps there are other places where we should replace l with that but it
+#          should be pretty simple to find what to replace l by
 ########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol
