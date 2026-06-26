@@ -387,7 +387,10 @@ function restartBTOAR(Q□::Matrix,U□::Matrix,H□::Matrix,keep::Function,verb
     
     U□⁽¹⁾ = U□[1:size(Q□,2),:] #deconstruct U□ for readability
     U□⁽²⁾ = U□[size(Q□,2)+1:2size(Q□,2),:]
-    U,Σ,V = psvd([[U□⁽¹⁾[1:size(U□⁽¹⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽¹⁾[:,size(U□,2)-l+1:size(U□,2)] [U□⁽²⁾[1:size(U□⁽²⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽²⁾[:,size(U□,2)-l+1:size(U□,2)]],rank=p+2l) #that took a while to type
+    U,Σ,V = svd([[U□⁽¹⁾[1:size(U□⁽¹⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽¹⁾[:,size(U□,2)-l+1:size(U□,2)] [U□⁽²⁾[1:size(U□⁽²⁾,1)-l,1:size(U□,2)-l]*schurfact.Z[:,1:p];zeros(l,p)] U□⁽²⁾[:,size(U□,2)-l+1:size(U□,2)]]) #that took a while to type
+    U = U[:,1:minimum([p+2l,size(U,2)])] #this minimum() is in case the number of rows of [W X Y Z] is too small (it is (k+1)l, which could be smaller than p+2l if l is big enough)
+    Σ = Σ[1:minimum([p+2l,size(Σ,1)])]
+    V = V[:,1:p+2l]
     
     Uₚ₊₁ = kron(I(2),Diagonal(Σ))*[V'[:,1:p+l];V'[:,p+l+1:2(p+l)]]
     
