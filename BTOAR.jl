@@ -890,3 +890,4 @@ end
 #          When there are not enough eigenvalues in DoI, but there are some, it seems to throw them all away
 #          When there are enough eigenvalues in the DoI, it still strows them all away
 #          This looks an awful lot like a problem with transformed_keep()
+#          Also transformed_keep() should respect inv
