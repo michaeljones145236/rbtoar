@@ -672,7 +672,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     D¹(x) = Dₛ*x #we call the functions D¹ and K¹ because the names D and K are taken
     K¹(x) = (inv ? Mₛ : Kₛ)*x
     
-    transformed_keep(λ) = keep.((λ .- σ) .^ -1 ./ γ) #to keep the right eigenvalues regardless of spectral transformation
+    transformed_keep(λ) = keep.(((λ ./ γ) .- σ) .^ -1) #to keep the right eigenvalues regardless of spectral transformation
     
     if verb > 0
         print("== START OF BTOAR ALGORITHM ==\n\n")
@@ -884,4 +884,9 @@ end
 #          should be pretty simple to find what to replace l by
 ########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol
 ########## When expanding with very little space left to fill (less than step) make sure to expand some amount anyway
-########## Only compute residuals for Ritz values inside DoI
+########## Only compute residuals for Ritz values inside DoI (set all ones outside to big number?)
+
+########## Restarting with narrow DoI (qep7747, DoI real part between -6e4 and -5e4, tol=1e-12) doesn't seem to be working correctly.
+#          When there are not enough eigenvalues in DoI, but there are some, it seems to throw them all away
+#          When there are enough eigenvalues in the DoI, it still strows them all away
+#          This looks an awful lot like a problem with transformed_keep()
