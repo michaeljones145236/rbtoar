@@ -30,7 +30,7 @@ $$\rho=\frac{\Vert(\tilde{\lambda}^2M+\tilde{\lambda}D+K)\tilde{x}\Vert_2}{|\til
   - `which` specifies which eigenvalues to target. The default is `:SM`, which targets eigenvalues closest to `σ`. The other accepted value is `:LM`, which targets eigenvalues furthest from `σ`.
   - `keep` is the function that specifies the domain of interest. This function should accept a single positional argument of type `ComplexF64` and return `true` if it is in the domain of interest and false otherwise. By default, the domain of interest is taken to be the full complex plane (so `keep` always returns `true` for all inputs).
   - `dtol` is an internal numerical tolerance for breakdown/deflation detection (default $10^{-10}$). Normally this should not be changed, except in the case of badly behaved QEPs if you know what you're doing.
-  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. The default is 0, equivalent to doing nothing.
+  - `rrv` is the number of inverse power iterations to apply in the Ritz vector refinement. When used, a value of `5` to `10` is usually sensible. The default is 0, equivalent to doing nothing.
   - `flvd` is whether to use Fan, Lin & Van Dooren [3] scaling on the QEP. Scaling is applied based on matrix 1-norms. By default, scaling is always applied, as it can sometimes help a lot and is quite cheap.
   - `verb` is the level of verbosity. It can take three values:
     - `0`: no verbosity
