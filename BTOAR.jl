@@ -758,9 +758,9 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         #compute residuals
         ρ = zeros(2m)
         for i in 1:2m #calculate backward error residuals
-            ρ[i] = norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ)
+            ρ[i] = keep(λ[i]) ? (norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ)) : 1e100 #if not in DoI, set residual to arbitrary high value
         end
-        good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest
+        good = sum((ρ .< tol) .&& keep.(λ)) #number of acceptable residuals in domain of interest THIS LINE COULD ACTUALLY BE SIMPLIFIED NOW BECAUSE OF L.761 OPTIMISATION
         if verb == 1
             print("Subspace size: $m / $kl_max\nGood eigenpairs: $good / $req\n\n")
         elseif verb == 2
