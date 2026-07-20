@@ -891,3 +891,5 @@ end
 #          When there are enough eigenvalues in the DoI, it still strows them all away
 #          This looks an awful lot like a problem with transformed_keep()
 #          Also transformed_keep() should respect inv
+
+########## Optimise using undef instead of zeros
