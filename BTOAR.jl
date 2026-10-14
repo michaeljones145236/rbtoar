@@ -882,7 +882,7 @@ end
 ########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*l" to something)
 #          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not l but m_{something}), perhaps there are other places where we should replace l with that but it
 #          should be pretty simple to find what to replace l by
-########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol
+########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol (depending on verb ofc)
 ########## When expanding with very little space left to fill (less than step) make sure to expand some amount anyway
 ########## Only compute residuals for Ritz values inside DoI (still haven't optimised for RRVs)
 
@@ -893,3 +893,6 @@ end
 #          Also transformed_keep() should respect inv
 
 ########## Optimise using undef instead of zeros
+########## Add options for different kinds of orthogonalisations
+########## Add option for randomisation using CountSketch
+########## FFS tidy this code up a bit
