@@ -13,9 +13,18 @@ function b(r::Union{Int,UnitRange{Int}},l::Int) #function to help out with long 
 end
 
 #this function doesn't actually compute a rrqr factorisation because R will not necessarily be upper trapezoidal, but we don't really care
-function rrqr(A::Matrix,tol::Float64)
+function rrqr(A::Matrix,tol::Float64) #this is our IntraOrtho
     Q,R,p = pqr(A,rtol=tol) #use the so-called `partial QR factorisation'
     return Q,R*ColumnPermutation(p)' #return Q and (unfortunately non-upper trapezoidal) R
+end
+
+function BTOARRR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,Q::Matrix,U::Matrix,H::Matrix;l::Int=1,p::Real=1)
+    MLU = lu(M)
+    
+    I₂⊗QU = #this costs a little extra memory to store, but 
+    num = opnorm(,p)
+    den = opnorm(I₂⊗QU*H,p) #similarly cheap since I₂⊗QU comes for free
+    return num/den
 end
 
 hermitify(A) = (A+A')/2 #for the Cholesky factorisation, which thinks a matrix that's not EXACTLY Hermitian isn't acceptable
@@ -44,7 +53,7 @@ Compute an orthogonal basis for the `k`th second-order Krylov subspace Gₖ(M⁻
  -`ρ₂::Float64`: 1-norm orthonormality residual ‖`UₖᴴUₖ`-I‖₁.\n
  -`ρ₃::Float64`: 1-norm TOAR relation residual ‖[A B;I 0]*(`I₂`⊗`Qₖ₋₁`)`Uₖ₋₁` - (`I₂`⊗`Qₖ`)`UₖHₖ`‖₁ / ‖(`I₂`⊗`Qₖ`)`UₖHₖ`‖₁.\n
 """
-function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol::Float64=NaN,verb::Int=0)
+function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol::Float64=NaN,verb::Int=0,orth::Symbol=:BCGS2)
     n,l = size(R) #n and l are not function arguments, but are taken implicitly from R
 
     if deftol ≡ NaN #if deftol isn't set, we give it a reasonable default
@@ -69,8 +78,12 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
+    if !(orth in [:BMGS;:BMGS2;:BCGS;:BCGS2;:BMGS_old]) #I will maybe add other orthogonalisation schemes later
+        @warn "Orthogonalisation scheme $orth not supported\nDefaulting to :BCGS2"
+        orth = :BCGS2
+    end
     
-    m = zeros(Int,k) #we preallocate the array of ranks of Rⱼ-QⱼSⱼ (note that m[1] is m₀, not m₁)
+    m = zeros(Int,k) #preallocate the array of ranks of Rⱼ-QⱼSⱼ (note that m[1] is m₀, not m₁)
     m[1] = rank(R[1:l,:],rtol=deftol) #to save time, we start by taking the rank of a small full-width submatrix of R
     if m[1] < l #if the small full-width submatrix was rank deficient (unlikely most of the time) 
         m[1] = rank(R,rtol=deftol) #test the rank of the full block vector R
@@ -85,21 +98,59 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
     Q,R = qr(R) #standard QR factorisation because R now must be full-rank
     Qⱼ = Matrix{ComplexF64}(Q) #qr() outputs Q in a special form without explicitly forming the matrix, so we have to tell it to
     Uⱼ = [I(l);zeros(Complex{Float64},l,l)] #because V₁ = [Q₁;0]
-    Hₖ = zeros(Complex{Float64},k*l,(k-1)*l) #we can preallocate H because its final size is known now
+    Hₖ = Matrix{ComplexF64}(undef,k*l,(k-1)*l) #we can preallocate H because its final size is known now
     
     for j in 1:k-1 #main for loop
         Rⱼ = M⁻¹(D(Qⱼ*-Uⱼ[1:sum(m),(j-1)l+1:j*l]) + K(Qⱼ*-Uⱼ[sum(m)+1:2sum(m),(j-1)l+1:j*l])) #take next Rⱼ block vector
-        Sⱼ = zeros(Complex{Float64},sum(m[1:j]),l) #preallocate Sⱼ
-        for i in 1:sum(m[1:j]) #doing it this way seems to greatly reduce error for Ansys QEPs
-            Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
-            Rⱼ -= Qⱼ[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
+        Sⱼ = Matrix{ComplexF64}(undef,sum(m[1:j]),l) #preallocate Sⱼ efficiently
+        
+        if orth == :BCGS #the "I'm in a hurry and I don't care about numerical stability" approach
+            Sⱼ = Qⱼ'*Rⱼ #Sⱼ is assigned all at once with BLAS 3
+            Rⱼ -= Qⱼ*Sⱼ #Rⱼ is orthogonalised all at once with BLAS 3
+            Qʰ,Rʰ = rrqr(Rⱼ,deftol) #IntraOrtho
+        elseif orth == :BMGS #could still be unstable for ill-conditioned post-MGS Rⱼ
+            for i in 1:sum(m[1:j])
+                Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #Sⱼ is assigned one row at a time
+                Rⱼ -= Qⱼ[:,i:i]*Sⱼ[i:i,:]
+            end
+            Qʰ,Rʰ = rrqr(Rⱼ,deftol) #IntraOrtho
+        elseif orth == :BCGS2
+            Sⱼ = Qⱼ'*Rⱼ #just as for BCGS
+            Rⱼ -= Qⱼ*Sⱼ #just as for BCGS
+            Qʰ¹,Rʰ¹ = rrqr(Rⱼ,deftol) #just as for BCGS
+            Sᵣₑₛ = Qⱼ'*Qʰ¹ #residual orthogonalisation coefficients
+            Qʰ¹ -= Qⱼ*Sᵣₑₛ #orthogonalise the Q-factor against Qⱼ (reorthogonalisation done properly)
+            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #second IntraOrtho
+            Sⱼ += Sᵣₑₛ*Rʰ¹ #Sᵣₑₛ is computed from the RRQR factorisation of post-first-orthogonalisation Rⱼ, so to be accounted for it must be run through the R-factor Rʰ¹
+            Rʰ = Rʰ²*Rʰ¹ #in the case of deflation, this product is still defined
+        elseif orth == :BMGS2 #this might actually be unnecessary, but we include it for completeness anyway
+            for i in 1:sum(m[1:j]) #just as for BMGS
+                Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #just as for BMGS
+                Rⱼ -= Qⱼ[:,i:i]*Sⱼ[i:i,:] #just as for BMGS
+            end #just as for BMGS
+            Qʰ¹,Rʰ¹ = rrqr(Rⱼ,deftol) #just as for BMGS
+            Sᵣₑₛ = Matrix{ComplexF64}(undef,sum(m[1:j]),size(Qʰ¹,2))
+            for i in 1:sum(m[1:j])
+                Sᵣₑₛ[i:i,:] = Qⱼ[:,i:i]'*Qʰ¹
+                Qʰ¹ -= Qⱼ[:,i:i]*Sᵣₑₛ[i:i,:]
+            end
+            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #just as for BCGS2+
+            Sⱼ += Sᵣₑₛ*Rʰ¹ #just as for BCGS2+
+            Rʰ = Rʰ²*Rʰ¹ #just as for BCGS2+
+        else #:BMGS_old, the old method that I used
+            for i in 1:sum(m[1:j]) #first pass of MGS on each vector in the block against Qⱼ
+                Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
+                Rⱼ -= Qⱼ[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
+            end
+            Sᵣₑₛ = Matrix{ComplexF64}(undef,sum(m[1:j]),l)
+            for i in 1:sum(m[1:j]) #second pass of MGS on each vector in the block against Qⱼ
+                Sᵣₑₛ = Qⱼ[:,i:i]'*Rⱼ
+                Rⱼ -= Qⱼ[:,i:i]*Sᵣₑₛ #correct Rⱼ
+                Sⱼ[i:i,:] += Sᵣₑₛ #correct Sⱼ (no need to do this in the loop really...)
+            end
+            Qʰ,Rʰ = rrqr(Rⱼ,deftol) #technically not actually a rank-revealing QR but it doesn't really matter
         end
-        for i in 1:sum(m[1:j]) #partial reorthogonalisation
-            Sᵣₑₛ = Qⱼ[:,i:i]'*Rⱼ #not the full residual (block) vector
-            Rⱼ -= Qⱼ[:,i:i]*Sᵣₑₛ #correct Rⱼ
-            Sⱼ[i:i,:] += Sᵣₑₛ #correct Sⱼ
-        end
-        Qʰ,Rʰ = rrqr(Rⱼ,deftol) #MIGHT WANT TO DO CHEAP RANK TEST HERE FOR EFFICIENCY DEPENDING ON PERFORMANCE OF RRQR
+        
         m[j+1] = size(Qʰ,2) #record the rank of Rⱼ-Qⱼ*Sⱼ
         if m[j+1] < l #if we have deflation
             if verb == 1 #if we have medium verbosity
@@ -169,22 +220,17 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             print("\n")
         end
     end
+    
     j = k-1 #rather than going through the expression for ρ₃ and changing every j to k-1, I just set this and copy-paste it
-    ρ₁ = opnorm(Qⱼ'*Qⱼ-I,1) # }
-    ρ₂ = opnorm(Uⱼ'*Uⱼ-I,1) # } - these two residuals are easier to type out than ρ₃
-    ρ₃ = opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*l])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) #this was soul-crushing to debug
+    #ρ₁ = opnorm(Qⱼ'*Qⱼ-I,1) # }
+    #ρ₂ = opnorm(Uⱼ'*Uⱼ-I,1) # } - these two residuals are easier to type out than ρ₃
+    #ρ₃ = opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*l])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) #this was soul-crushing to debug
     if verb == 1
-        print("🟦\nTOAR relation residual: ")
-        display(ρ₃)
-        print("Qⱼ residual: ")
-        display(opnorm(Qⱼ'*Qⱼ-I,1))
-        print("Uⱼ residual: ")
-        display(opnorm(Uⱼ'*Uⱼ-I,1))
-        print("\n")
+        print("🟦")
     elseif verb == 2
         print("🟦Terminated successfully.\n\n")
     end
-    return Qⱼ,Uⱼ,Hₖ,ρ₁,ρ₂,ρ₃
+    return Qⱼ,Uⱼ,Hₖ
 end
 
 """
@@ -299,7 +345,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
         Kₘ = Qₖ'*K¹(Qₖ)
     end
     LP = linearize(Kₘ,Dₘ,Mₘ) #linearize the QEP
-    Z = zeros(ComplexF64,m,2m) #preallocate space for reduced-order eigenvectors
+    Z = Matrix{ComplexF64}(undef,m,2m) #preallocate space for reduced-order eigenvectors
     λ,V = eigen(LP.A,LP.B) #generalised eigenproblem solver
     if false #rrv (temporary bodge)
         MQₖᵀMQₖ = MQₖ'MQₖ #pre-form matrices for faster formation of PQ
@@ -329,7 +375,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     
     X = Qₖ*Z #transform eigenvectors back to full-sized space (they stay normalised)
     
-    ρ = zeros(2m) #preallocate space for residuals
+    ρ = Vector{Float64}(undef,2m) #preallocate space for residuals
     for i in 1:2m #calculate backward error residuals
         ρ[i] = norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ)
     end
@@ -426,7 +472,7 @@ Continue the BTOAR algorithm after a restart.
  -`U::Matrix`: auxiliary matrix.\n
  -`H::Matrix`: auxiliary matrix.\n
 """
-function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,Uₚ₊₁::Matrix,Hₚ₊₁::Matrix,k::Int,l::Int;deftol::Float64=1e-10,verb::Int=0)
+function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,Uₚ₊₁::Matrix,Hₚ₊₁::Matrix,k::Int,l::Int;deftol::Float64=1e-10,verb::Int=0,orth::Symbol=:BCGS2)
     n = size(Qᵣ,1) #take n implicitly
     
     if deftol < eps(Float64) #warning about setting deflation tolerance too low
@@ -448,6 +494,10 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
+    if !(orth in [:BMGS;:BMGS2;:BCGS;:BCGS2;:BMGS_old]) #I will maybe add other orthogonalisation schemes later
+        @warn "Orthogonalisation scheme $orth not supported\nDefaulting to :BCGS2"
+        orth = :BCGS2
+    end
     
     #no need to set up quantities, they already exist, we just need to make copies (inefficient, should really write an in-place function)
     Q = Matrix{ComplexF64}(Qᵣ)
@@ -455,18 +505,54 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
     H = Matrix{ComplexF64}(Hₚ₊₁)
     
     for j in 1:k #main for loop
-        Rⱼ = M⁻¹(D(Q*-U[1:Int(size(U,1)/2),size(U,2)-l+1:size(U,2)]) + K(Q*-U[Int(size(U,1)/2)+1:size(U,1),size(U,2)-l+1:size(U,2)])) #take next Rⱼ block vector
-        Sⱼ = zeros(Complex{Float64},size(Q,2),l) #preallocate Sⱼ
-        for i in 1:size(Q,2) #doing it this way seems to greatly reduce error for Ansys QEPs
-            Sⱼ[i:i,:] = Q[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
-            Rⱼ -= Q[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
+        R = M⁻¹(D(Q*-U[1:Int(size(U,1)/2),size(U,2)-l+1:size(U,2)]) + K(Q*-U[Int(size(U,1)/2)+1:size(U,1),size(U,2)-l+1:size(U,2)])) #take next Rⱼ block vector
+        S = Matrix{ComplexF64}(undef,size(Q,2),l) #preallocate Sⱼ efficiently
+        if orth == :BCGS #the "I'm in a hurry and I don't care about numerical stability" approach
+            S = Q'*R #Sⱼ is assigned all at once with BLAS 3
+            R -= Q*S #Rⱼ is orthogonalised all at once with BLAS 3
+            Qʰ,Rʰ = rrqr(R,deftol) #IntraOrtho
+        elseif orth == :BMGS #could still be unstable for ill-conditioned post-MGS Rⱼ
+            for i in 1:size(Q,2)
+                S[i:i,:] = Q[:,i:i]'*R #Sⱼ is assigned one row at a time
+                R -= Q[:,i:i]*S[i:i,:]
+            end
+            Qʰ,Rʰ = rrqr(R,deftol) #IntraOrtho
+        elseif orth == :BCGS2
+            S = Q'*R #just as for BCGS
+            R -= Q*S #just as for BCGS
+            Qʰ¹,Rʰ¹ = rrqr(R,deftol) #just as for BCGS
+            Sᵣₑₛ = Q'*Qʰ¹ #residual orthogonalisation coefficients
+            Qʰ¹ -= Q*Sᵣₑₛ #orthogonalise the Q-factor against Qⱼ (reorthogonalisation done properly)
+            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #second IntraOrtho
+            S += Sᵣₑₛ*Rʰ¹ #Sᵣₑₛ is computed from the RRQR factorisation of post-first-orthogonalisation Rⱼ, so to be accounted for it must be run through the R-factor Rʰ¹
+            Rʰ = Rʰ²*Rʰ¹ #in the case of deflation, this product is still defined
+        elseif orth == :BMGS2 #this might actually be unnecessary, but we include it for completeness anyway
+            for i in 1:size(Q,2) #just as for BMGS
+                S[i:i,:] = Q[:,i:i]'*R #just as for BMGS
+                R -= Q[:,i:i]*S[i:i,:] #just as for BMGS
+            end #just as for BMGS
+            Qʰ¹,Rʰ¹ = rrqr(R,deftol) #just as for BMGS
+            Sᵣₑₛ = Matrix{ComplexF64}(undef,size(Q,2),size(Qʰ¹,2))
+            for i in 1:size(Q,2)
+                Sᵣₑₛ[i:i,:] = Q[:,i:i]'*Qʰ¹
+                Qʰ¹ -= Q[:,i:i]*Sᵣₑₛ[i:i,:]
+            end
+            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #just as for BCGS2+
+            S += Sᵣₑₛ*Rʰ¹ #just as for BCGS2+
+            Rʰ = Rʰ²*Rʰ¹ #just as for BCGS2+
+        else #:BMGS_old, the old method that I used
+            for i in 1:size(Q,2) #doing it this way seems to greatly reduce error for Ansys QEPs
+                S[i:i,:] = Q[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
+                R -= Q[:,i:i]*Sⱼ[i:i,:] #subtract off parts of Rⱼ that are parallel to columns of Qⱼ
+            end
+            Sᵣₑₛ = Matrix{ComplexF64}(undef,size(Q,2),l)
+            for i in 1:size(Q,2) #partial reorthogonalisation
+                Sᵣₑₛ = Q[:,i:i]'*R #not the full residual (block) vector
+                R -= Q[:,i:i]*Sᵣₑₛ #correct Rⱼ
+                S[i:i,:] += Sᵣₑₛ #correct Sⱼ
+            end
+            Qʰ,Rʰ = rrqr(R,deftol)
         end
-        for i in 1:size(Q,2) #partial reorthogonalisation
-            Sᵣₑₛ = Q[:,i:i]'*Rⱼ #not the full residual (block) vector
-            Rⱼ -= Q[:,i:i]*Sᵣₑₛ #correct Rⱼ
-            Sⱼ[i:i,:] += Sᵣₑₛ #correct Sⱼ
-        end
-        Qʰ,Rʰ = rrqr(Rⱼ,deftol) #MIGHT WANT TO DO CHEAP RANK TEST HERE FOR EFFICIENCY DEPENDING ON PERFORMANCE OF RRQR
         m = size(Qʰ,2) #record the rank of Rⱼ-Qⱼ*Sⱼ
         if m < l #if we have deflation
             if verb == 1 #if we have medium verbosity
@@ -504,17 +590,17 @@ function continueBTOAR(M⁻¹::Function,D::Function,K::Function,Qᵣ::Matrix,U�
         Uʰ = U[1:Int(size(U,1)/2),size(U,2)-l+1:size(U,2)] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
         H = [H zeros(size(H,1),l);zeros(l,size(H,2)) zeros(l,l)] #expand H (zeros for now)
         for i = 1:size(U,2) #second-level orthogonalisation
-            H[i:i,size(H,2)-l+1:size(H,2)] = U[1:Int(size(U,1)/2),i:i]'*Sⱼ + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #fill in new block column of Hₖ
-            Sⱼ -= U[1:Int(size(U,1)/2),i:i]*H[i:i,size(H,2)-l+1:size(H,2)] #orthogonalise Sⱼ against Uⱼ,₁
+            H[i:i,size(H,2)-l+1:size(H,2)] = U[1:Int(size(U,1)/2),i:i]'*S + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #fill in new block column of Hₖ
+            S -= U[1:Int(size(U,1)/2),i:i]*H[i:i,size(H,2)-l+1:size(H,2)] #orthogonalise Sⱼ against Uⱼ,₁
             Uʰ -= U[Int(size(U,1)/2)+1:size(U,1),i:i]*H[i:i,size(H,2)-l+1:size(H,2)] #and Uʰ against Uⱼ,₂
         end
         for i = 1:size(U,2) #second-level reorthogonalisation
-            Hᵣₑₛ = U[1:Int(size(U,1)/2),i:i]'*Sⱼ + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #not the full residual
-            Sⱼ -= U[1:Int(size(U,1)/2),i:i]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
+            Hᵣₑₛ = U[1:Int(size(U,1)/2),i:i]'*S + U[Int(size(U,1)/2)+1:size(U,1),i:i]'*Uʰ #not the full residual
+            S -= U[1:Int(size(U,1)/2),i:i]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
             Uʰ -= U[Int(size(U,1)/2)+1:size(U,1),i:i]*Hᵣₑₛ #and Uʰ against Uⱼ,₂
             H[i:i,size(H,2)-l+1:size(H,2)] += Hᵣₑₛ #correct block column of Hₖ
         end
-        Qᵗ,Rᵗ = qr([Sⱼ;Rʰ;Uʰ]) #standard QR factorisation, not RRQR
+        Qᵗ,Rᵗ = qr([S;Rʰ;Uʰ]) #standard QR factorisation, not RRQR
         Qᵗ = Matrix(Qᵗ) #we must force explicit formation of Qᵗ
         if rank(Rᵗ,rtol=deftol) < l #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
             if verb == 2
@@ -566,7 +652,7 @@ Compute some eigenpairs of the QEP `(λ²M + λD + K)x=0` using the restarted bl
  -`X::Matrix`: array of Ritz vectors.\n
  -`ρ::Vector`: array of backward error residuals for returned eigenpairs `λ`,`X`.\n
 """
-function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kl_max::Int=300,l::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false,extra_space::Int=0)
+function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req::Int=100,tol::Float64=1e-10,kl_max::Int=300,l::Int=1,step::Int=10,σ::Union{Float64,ComplexF64}=0.0+0.0im,which::Symbol=:SM,keep::Function=every,dtol::Float64=1e-10,rrv::Int=0,flvd::Bool=true,verb::Int=0,check_singular::Bool=false,give_up::Int=10,glob::Bool=false,extra_space::Int=0,orth::Symbol=:BCGS2)
     n = size(M,1) #take n implicitly
     if false in (n .== [size(M,2);size(D,1);size(D,2);size(K,1);size(K,2)]) #M, D and K must all be n×n
         error("M, D and K must all be n×n")
@@ -615,6 +701,10 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
     end
     if rrv < 0
         @error "rrv must be positive (got $rrv)"
+    end
+    if !(orth in [:BMGS;:BMGS2;:BCGS;:BCGS2;:BMGS_old]) #I will maybe add other orthogonalisation schemes later
+        @warn "Orthogonalisation scheme $orth not supported\nDefaulting to :BCGS2"
+        orth = :BCGS2
     end
 
     inv = which == :SM #Fran wanted me to rename this argument
@@ -678,22 +768,22 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         print("== START OF BTOAR ALGORITHM ==\n\n")
     end
 
-    ############################## EVERYTHING BEFORE THIS POINT IS BASICALLY THE SAME AS IN quadEigBTOAR() #################################
+    ############################## EVERYTHING BEFORE THIS POINT IS BASICALLY THE SAME AS IN quadEigBTOAR() (not really some of it is different) #################################
 
     #initialise intermediate matrices retained for efficiency
     MQ = zeros(ComplexF64,n,0)
-    DQ = zeros(ComplexF64,n,0)
+    DQ = zeros(ComplexF64,n,0) #these can all be initialised using zeros() because they have 0 entries
     KQ = zeros(ComplexF64,n,0)
 
     #initialise reduced order QEP as 0×0 matrices
     QᵀMQ = zeros(ComplexF64,0,0)
-    QᵀDQ = zeros(ComplexF64,0,0)
+    QᵀDQ = zeros(ComplexF64,0,0) #these can all be initialised using zeros() because they have 0 entries
     QᵀKQ = zeros(ComplexF64,0,0)
     
     #if we are using RRVs, initialise RRV quantities
     if rrv > 0
         MQᵀMQ = zeros(ComplexF64,0,0)
-        MQᵀDQ = zeros(ComplexF64,0,0)
+        MQᵀDQ = zeros(ComplexF64,0,0) #these can all be initialised using zeros() because they have 0 entries
         MQᵀKQ = zeros(ComplexF64,0,0)
         DQᵀMQ = zeros(ComplexF64,0,0)
         DQᵀDQ = zeros(ComplexF64,0,0)
@@ -703,7 +793,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         KQᵀKQ = zeros(ComplexF64,0,0)
     end
 
-    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),maximum([step,Int(floor(req/l))]),deftol=dtol,verb=verb) #initialise by building extra large step
+    Q,U,H,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),maximum([step,Int(floor(req/l))]),deftol=dtol,verb=verb,orth=orth) #initialise by building extra large step
     m = size(Q,2) #there might have been deflations
     good = 0 #number of acceptable eigenpairs computed
     good_ones = Bool[] #preallocate this as empty to avoid crash
@@ -742,7 +832,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
 
         #solve reduced-order problem
         LP = linearize(QᵀKQ,QᵀDQ,QᵀMQ) #linearize the QEP
-        Z = zeros(ComplexF64,m,2m) #preallocate space for reduced-order eigenvectors
+        Z = Matrix{ComplexF64}(undef,m,2m) #preallocate space for reduced-order eigenvectors
         λ,V = eigen(LP.A,LP.B)
         for i in 1:2m #extract quadratic eigenvectors
             Z[:,i] = (abs(λ[i]) > 1) ? V[1:m,i] : V[m+1:2m,i] #this should be more stable I think
@@ -756,7 +846,7 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
         X = Q*Z #transform eigenvectors back to full-sized space (they stay normalised)
 
         #compute residuals
-        ρ = zeros(2m)
+        ρ = Vector{Float64}(undef,2m)
         for i in 1:2m #calculate backward error residuals
             ρ[i] = keep(λ[i]) ? (norm(λ[i]^2*M*X[:,i]+λ[i]*D*X[:,i]+K*X[:,i]) / (abs2(λ[i])*Mₙₒᵣₘ+abs(λ[i])*Dₙₒᵣₘ+Kₙₒᵣₘ)) : 1e100 #if not in DoI, set residual to arbitrary high value
         end
@@ -873,16 +963,15 @@ function quadEigRBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix;req
             if verb > 0
                 print("== CONTINUING BTOAR ALGORITHM ==\n")
             end
-            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/l)),Int(floor((kl_max-m)/l))])]),l;deftol=dtol,verb=verb) #grow the subspace by as much as we can without overflowing or overdoing it
+            Q,U,H = continueBTOAR(M⁻¹,D¹,K¹,Q,U,H,maximum([step,minimum([Int(floor((req-good)/l)),Int(floor((kl_max-m)/l))])]),l;deftol=dtol,verb=verb,orth=orth) #grow the subspace by as much as we can without overflowing or overdoing it
         end
         m = size(Q,2)
     end
 end
-########## ADD CONDITIONAL REORTHOGONALISATION AND POST-RRQR/QR FACTORISATION REORTHOGONALISATION (maybe the latter might be hard...)
+########## ADD CONDITIONAL REORTHOGONALISATION
 ########## GIVE RESTART THE FLEXIBILITY TO ALLOW FOR A DEFLATION JUST BEFORE (this should be pretty simple, right? Just change the "+ step*l" to something)
 #          I think all that is required is to make the zeroes in the W and Y matrices of conforming size (so not l but m_{something}), perhaps there are other places where we should replace l with that but it
 #          should be pretty simple to find what to replace l by
-########## Print out Q, U and BTOAR relation residuals after each step, not just the first lol (depending on verb ofc)
 ########## When expanding with very little space left to fill (less than step) make sure to expand some amount anyway
 ########## Only compute residuals for Ritz values inside DoI (still haven't optimised for RRVs)
 
@@ -892,7 +981,13 @@ end
 #          This looks an awful lot like a problem with transformed_keep()
 #          Also transformed_keep() should respect inv
 
-########## Optimise using undef instead of zeros
-########## Add options for different kinds of orthogonalisations
 ########## Add option for randomisation using CountSketch
+########## Add option for using the Hessenberg matrix for Ritz values
 ########## FFS tidy this code up a bit
+########## See about using in-place functions for continueBTOAR and others (we make copies of Q when we really shouldn't!)
+########## What's the deal with extra_space?
+########## BTOAR should not always need to return residuals, instead have a relation residual function that verb=2 calls
+########## change U orthogonalisation to always use BMGS2 and make it so partial breakdown can be handled (this could be a bit of work lol)
+########## Make sure verb=0 means say nothing, verb=1 means say only things that are cheap to say, verb=2 means say lots of things (Make verb a bit more thorough for verb==2)
+########## Make function for BTOAR relation residual rather than computing by default
+
