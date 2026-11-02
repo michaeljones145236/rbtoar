@@ -20,10 +20,9 @@ end
 
 function BTOARRR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,Q::Matrix,U::Matrix,H::Matrix;l::Int=1,p::Real=1)
     MLU = lu(M)
-    
-    I₂⊗QU = #this costs a little extra memory to store, but 
-    num = opnorm(,p)
-    den = opnorm(I₂⊗QU*H,p) #similarly cheap since I₂⊗QU comes for free
+    I₂QU = [Q*U[1:Int(size(U,1)//2),:];Q*U[Int(size(U,1)//2)+1:size(U,1),:]] #this costs a little extra memory to store, but should save recomputing
+    num = opnorm([MLU\(-D*I₂QU[1:size(Q,1),1:end-l]-K*I₂QU[size(Q,1)+1:2size(Q,1),1:end-l]);I₂QU[1:size(Q,1),1:end-l]]-I₂QU*H,p)
+    den = opnorm(I₂QU*H,p) #similarly cheap since I₂⊗QU comes for free
     return num/den
 end
 
@@ -183,21 +182,23 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         elseif verb == 1 #finally, if verbosity is medium and there is no deflation
             print("🟩") #just a green square with no newline character
         end
-        Qⱼ = [Qⱼ Qʰ] #append the newly computed columns to Qⱼ
+        Qⱼ = [Qⱼ Qʰ] #optimise this
         Uʰ = Uⱼ[1:sum(m[1:j]),(j-1)l+1:j*l] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
-        for i = 1:j #second-level orthogonalisation
+        for i = 1:j #second-level orthogonalisation always uses BMGS2, since we don't care about cost for small matrices
             Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Uʰ #fill in new block column of Hₖ
             Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #orthogonalise Sⱼ against Uⱼ,₁
             Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #and Uʰ against Uⱼ,₂
         end
-        for i = 1:j #second-level reorthogonalisation
-            Hᵣₑₛ = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Uʰ #not the full residual
-            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]*Hᵣₑₛ #reorthogonalise Sⱼ against Uⱼ,₁
-            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]*Hᵣₑₛ #and Uʰ against Uⱼ,₂
-            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] += Hᵣₑₛ #correct block column of Hₖ
+        Qᵗ¹,Rᵗ¹ = qr([Sⱼ;Rʰ;Uʰ])
+        Qᵗ¹ = Matrix(Qᵗ¹)
+        for i = 1:j
+            Hᵣₑₛ = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Qᵗ¹[1:sum(m[1:j]),:] + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Qᵗ¹[sum(m[1:j])+1+size(Rʰ,1):2sum(m[1:j])+size(Rʰ,1),:] #not the full residual
+            Qᵗ¹ -= [Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l];zeros(size(Rʰ));Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]]*Hᵣₑₛ
+            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] += Hᵣₑₛ*Rᵗ¹ #correct block column of Hₖ
         end
-        Qᵗ,Rᵗ = qr([Sⱼ;Rʰ;Uʰ]) #standard QR factorisation, not RRQR
+        Qᵗ,Rᵗ² = qr(Qᵗ¹)
         Qᵗ = Matrix(Qᵗ) #we must force explicit formation of Qᵗ
+        Rᵗ = Rᵗ²*Rᵗ¹
         if rank(Rᵗ,rtol=deftol) < l #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
             if verb == 2
                 rk = rank(Rᵗ,rtol=deftol)
@@ -206,7 +207,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
                 print("🟥j=$j\n")
             end
             @warn "breakdown at j=$j, returning only Qⱼ" #warn the user, to prevent silent failure from causing problems
-            return Qⱼ,nothing,nothing,nothing,nothing,nothing #return Qⱼ because it might still be useful (probably not)
+            return Qⱼ,nothing,nothing #return Qⱼ because it might still be useful (probably not)
         end
         Hₖ[j*l+1:(j+1)l,(j-1)l+1:j*l] = Rᵗ #fill in bottom-right block entry of Hₖ
         Uⱼ = [[[Uⱼ[1:sum(m[1:j]),:];zeros(m[j+1],j*l);Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),:]] Qᵗ];zeros(m[j+1],(j+1)l)] #form new columns and rows of Uⱼ
@@ -329,7 +330,7 @@ function quadEigBTOAR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,k::I
     if verb > 0
         print("== BTOAR ALGORITHM ==\n\n")
     end
-    Qₖ,_,_,_,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),k,deftol=dtol,verb=verb) #run the BTOAR algorithm
+    Qₖ,_,_ = BTOAR(M⁻¹,D¹,K¹,rand(ComplexF64,n,l),k,deftol=dtol,verb=verb) #run the BTOAR algorithm
     m = size(Qₖ,2) #there might have been deflations
     
     if false #rrv (temporary bodge)
@@ -981,6 +982,7 @@ end
 #          This looks an awful lot like a problem with transformed_keep()
 #          Also transformed_keep() should respect inv
 
+########## remove m array for block ranks, use size() everywhere instead
 ########## Add option for randomisation using CountSketch
 ########## Add option for using the Hessenberg matrix for Ritz values
 ########## FFS tidy this code up a bit
@@ -989,5 +991,4 @@ end
 ########## BTOAR should not always need to return residuals, instead have a relation residual function that verb=2 calls
 ########## change U orthogonalisation to always use BMGS2 and make it so partial breakdown can be handled (this could be a bit of work lol)
 ########## Make sure verb=0 means say nothing, verb=1 means say only things that are cheap to say, verb=2 means say lots of things (Make verb a bit more thorough for verb==2)
-########## Make function for BTOAR relation residual rather than computing by default
-
+########## don't change size of Q array each iteration, preallocate
