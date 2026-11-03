@@ -82,8 +82,10 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         orth = :BCGS2
     end
     
-    m = zeros(Int,k) #preallocate the array of ranks of Rⱼ-QⱼSⱼ (note that m[1] is m₀, not m₁)
+    m = zeros(Int,k) #array of ranks of Rⱼ-QⱼSⱼ (note that m[1] is m₀, not m₁)
+    m₂ = zeros(Int,k) #array of ranks of block columns of Uⱼ
     m[1] = rank(R[1:l,:],rtol=deftol) #to save time, we start by taking the rank of a small full-width submatrix of R
+    m₂[1] = l #in this first step, where we have 
     if m[1] < l #if the small full-width submatrix was rank deficient (unlikely most of the time) 
         m[1] = rank(R,rtol=deftol) #test the rank of the full block vector R
         if m[1] < l #if R is rank-deficient
@@ -95,17 +97,20 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         end
     end
     Q,R = qr(R) #standard QR factorisation because R now must be full-rank
-    Qⱼ = Matrix{ComplexF64}(Q) #qr() outputs Q in a special form without explicitly forming the matrix, so we have to tell it to
-    Uⱼ = [I(l);zeros(Complex{Float64},l,l)] #because V₁ = [Q₁;0]
-    Hₖ = Matrix{ComplexF64}(undef,k*l,(k-1)*l) #we can preallocate H because its final size is known now
+    Qⱼ = Matrix{ComplexF64}(undef,n,k*l) #maximum possible size of Q (achieved if there are no deflations)
+    Qⱼ[:,1:m[1]] = Matrix{ComplexF64}(Q) #m[1] is the rank of the first block of Qⱼ
+    Uⱼ⁽¹⁾ = Matrix{ComplexF64}(undef,k*l,k*l) #maximum possible size of U⁽¹⁾ (achieved if there are no deflations or breakdowns)
+    Uⱼ⁽²⁾ = Matrix{ComplexF64}(undef,k*l,k*l) #maximum possible size of U⁽¹⁾ (achieved if there are no deflations or breakdowns)
+    Uⱼ⁽¹⁾[1:l,1:l] = I(l) #because V₁ = [Q₁;0]
+    Uⱼ⁽²⁾[1:l,1:l] = zeros(l,l)
+    Hₖ = Matrix{ComplexF64}(undef,k*l,(k-1)*l) #maximum possible size of H (achieved if there are no breakdowns)
     
     for j in 1:k-1 #main for loop
-        Rⱼ = M⁻¹(D(Qⱼ*-Uⱼ[1:sum(m),(j-1)l+1:j*l]) + K(Qⱼ*-Uⱼ[sum(m)+1:2sum(m),(j-1)l+1:j*l])) #take next Rⱼ block vector
-        Sⱼ = Matrix{ComplexF64}(undef,sum(m[1:j]),l) #preallocate Sⱼ efficiently
-        
+        Rⱼ = M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*-Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])]) + K(Qⱼ[:,1:sum(m[1:j])]*-Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])])) #take next Rⱼ block vector
+        Sⱼ = Matrix{ComplexF64}(undef,sum(m[1:j]),l) #reallocating this each step of the algorithm shouldn't be a serious cost compared with other stuff
         if orth == :BCGS #the "I'm in a hurry and I don't care about numerical stability" approach
-            Sⱼ = Qⱼ'*Rⱼ #Sⱼ is assigned all at once with BLAS 3
-            Rⱼ -= Qⱼ*Sⱼ #Rⱼ is orthogonalised all at once with BLAS 3
+            Sⱼ = Qⱼ[:,1:sum(m[1:j])]'*Rⱼ #Sⱼ is assigned all at once with BLAS 3
+            Rⱼ -= Qⱼ[:,1:sum(m[1:j])]*Sⱼ #Rⱼ is orthogonalised all at once with BLAS 3
             Qʰ,Rʰ = rrqr(Rⱼ,deftol) #IntraOrtho
         elseif orth == :BMGS #could still be unstable for ill-conditioned post-MGS Rⱼ
             for i in 1:sum(m[1:j])
@@ -114,11 +119,11 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             end
             Qʰ,Rʰ = rrqr(Rⱼ,deftol) #IntraOrtho
         elseif orth == :BCGS2
-            Sⱼ = Qⱼ'*Rⱼ #just as for BCGS
-            Rⱼ -= Qⱼ*Sⱼ #just as for BCGS
+            Sⱼ = Qⱼ[:,1:sum(m[1:j])]'*Rⱼ #just as for BCGS
+            Rⱼ -= Qⱼ[:,1:sum(m[1:j])]*Sⱼ #just as for BCGS
             Qʰ¹,Rʰ¹ = rrqr(Rⱼ,deftol) #just as for BCGS
-            Sᵣₑₛ = Qⱼ'*Qʰ¹ #residual orthogonalisation coefficients
-            Qʰ¹ -= Qⱼ*Sᵣₑₛ #orthogonalise the Q-factor against Qⱼ (reorthogonalisation done properly)
+            Sᵣₑₛ = Qⱼ[:,1:sum(m[1:j])]'*Qʰ¹ #residual orthogonalisation coefficients
+            Qʰ¹ -= Qⱼ[:,1:sum(m[1:j])]*Sᵣₑₛ #orthogonalise the Q-factor against Qⱼ (reorthogonalisation done properly)
             Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #second IntraOrtho
             Sⱼ += Sᵣₑₛ*Rʰ¹ #Sᵣₑₛ is computed from the RRQR factorisation of post-first-orthogonalisation Rⱼ, so to be accounted for it must be run through the R-factor Rʰ¹
             Rʰ = Rʰ²*Rʰ¹ #in the case of deflation, this product is still defined
@@ -182,23 +187,24 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         elseif verb == 1 #finally, if verbosity is medium and there is no deflation
             print("🟩") #just a green square with no newline character
         end
-        Qⱼ = [Qⱼ Qʰ] #optimise this
-        Uʰ = Uⱼ[1:sum(m[1:j]),(j-1)l+1:j*l] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
+        Qⱼ[:,sum(m[1:j])+1:sum(m[1:j+1])] = Qʰ
+        Uʰ = Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
         for i = 1:j #second-level orthogonalisation always uses BMGS2, since we don't care about cost for small matrices
-            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Sⱼ + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Uʰ #fill in new block column of Hₖ
-            Sⱼ -= Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #orthogonalise Sⱼ against Uⱼ,₁
-            Uʰ -= Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]*Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] #and Uʰ against Uⱼ,₂
+            Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] = Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Sⱼ + Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Uʰ #fill in new block column of Hₖ
+            Sⱼ -= Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]*Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #orthogonalise Sⱼ against Uⱼ⁽¹⁾
+            Uʰ -= Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]*Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #and Uʰ against Uⱼ⁽²⁾
         end
-        Qᵗ¹,Rᵗ¹ = qr([Sⱼ;Rʰ;Uʰ])
+        Qᵗ¹,Rᵗ¹ = rrqr([Sⱼ;Rʰ;Uʰ],deftol)
         Qᵗ¹ = Matrix(Qᵗ¹)
         for i = 1:j
-            Hᵣₑₛ = Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l]'*Qᵗ¹[1:sum(m[1:j]),:] + Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]'*Qᵗ¹[sum(m[1:j])+1+size(Rʰ,1):2sum(m[1:j])+size(Rʰ,1),:] #not the full residual
-            Qᵗ¹ -= [Uⱼ[1:sum(m[1:j]),(i-1)l+1:i*l];zeros(size(Rʰ));Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),(i-1)l+1:i*l]]*Hᵣₑₛ
-            Hₖ[(i-1)l+1:i*l,(j-1)l+1:j*l] += Hᵣₑₛ*Rᵗ¹ #correct block column of Hₖ
+            Hᵣₑₛ = Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Qᵗ¹[1:sum(m[1:j]),:] + Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Qᵗ¹[sum(m[1:j])+1+size(Rʰ,1):2sum(m[1:j])+size(Rʰ,1),:] #not the full residual
+            Qᵗ¹ -= [Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])];zeros(size(Rʰ));Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]]*Hᵣₑₛ
+            Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] += Hᵣₑₛ*Rᵗ¹ #correct block column of Hₖ
         end
-        Qᵗ,Rᵗ² = qr(Qᵗ¹)
+        Qᵗ,Rᵗ² = rrqr(Qᵗ¹,deftol)
         Qᵗ = Matrix(Qᵗ) #we must force explicit formation of Qᵗ
         Rᵗ = Rᵗ²*Rᵗ¹
+        m₂[j+1] = size(Qᵗ,2)
         if rank(Rᵗ,rtol=deftol) < l #this means (at least partial) breakdown of the concurrent block Arnoldi procedure
             if verb == 2
                 rk = rank(Rᵗ,rtol=deftol)
@@ -206,12 +212,15 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             elseif verb == 1
                 print("🟥j=$j\n")
             end
-            @warn "breakdown at j=$j, returning only Qⱼ" #warn the user, to prevent silent failure from causing problems
-            return Qⱼ,nothing,nothing #return Qⱼ because it might still be useful (probably not)
+            #@warn "breakdown at j=$j" #warn the user, to prevent silent failure from causing problems
+            #return Qⱼ,nothing,nothing #return Qⱼ because it might still be useful (probably not)
         end
-        Hₖ[j*l+1:(j+1)l,(j-1)l+1:j*l] = Rᵗ #fill in bottom-right block entry of Hₖ
-        Uⱼ = [[[Uⱼ[1:sum(m[1:j]),:];zeros(m[j+1],j*l);Uⱼ[sum(m[1:j])+1:2sum(m[1:j]),:]] Qᵗ];zeros(m[j+1],(j+1)l)] #form new columns and rows of Uⱼ
-        if verb == 2
+        Hₖ[sum(m₂[1:j])+1:sum(m₂[1:j+1]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] = Rᵗ #fill in bottom-right block entry of Hₖ
+        Uⱼ⁽¹⁾[1:sum(m[1:j+1]),sum(m₂[1:j])+1:sum(m₂[1:j+1])] = Qᵗ[1:sum(m[1:j+1]),:] #fill new block column
+        Uⱼ⁽¹⁾[sum(m[1:j])+1:sum(m[1:j+1]),1:sum(m₂[1:j])] .= 0 #fill new block row of zeros
+        Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:j])+1:sum(m₂[1:j+1])] = Qᵗ[sum(m[1:j+1])+1:end,:] #fill new block column
+        Uⱼ⁽²⁾[sum(m[1:j])+1:sum(m[1:j+1]),1:sum(m₂[1:j+1])] .= 0 #fill new block row of zeros
+        #=if verb == 2
             print("TOAR relation residual: ")
             display(opnorm([-(M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]) + K(Qⱼ[:,1:sum(m[1:j])]*Uⱼ[sum(m)+1:sum(m)+sum(m[1:j]),1:j*l])));Qⱼ[:,1:sum(m[1:j])]*Uⱼ[1:sum(m[1:j]),1:j*l]] - [Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1) / opnorm([Qⱼ*Uⱼ[1:sum(m),:];Qⱼ*Uⱼ[sum(m)+1:2sum(m),:]]*Hₖ[1:(j+1)l,1:j*l],1)) #this was soul-crushing to debug
             print("Qⱼ residual: ")
@@ -219,7 +228,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
             print("Uⱼ residual: ")
             display(opnorm(Uⱼ'*Uⱼ-I,1))
             print("\n")
-        end
+        end=#
     end
     
     j = k-1 #rather than going through the expression for ρ₃ and changing every j to k-1, I just set this and copy-paste it
@@ -231,7 +240,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
     elseif verb == 2
         print("🟦Terminated successfully.\n\n")
     end
-    return Qⱼ,Uⱼ,Hₖ
+    return Qⱼ[:,1:sum(m)],[Uⱼ⁽¹⁾[1:sum(m),1:sum(m₂)];Uⱼ⁽²⁾[1:sum(m),1:sum(m₂)]],Hₖ[1:sum(m₂),1:sum(m₂[1:end-1])]
 end
 
 """
@@ -991,4 +1000,7 @@ end
 ########## BTOAR should not always need to return residuals, instead have a relation residual function that verb=2 calls
 ########## change U orthogonalisation to always use BMGS2 and make it so partial breakdown can be handled (this could be a bit of work lol)
 ########## Make sure verb=0 means say nothing, verb=1 means say only things that are cheap to say, verb=2 means say lots of things (Make verb a bit more thorough for verb==2)
-########## don't change size of Q array each iteration, preallocate
+########## Make changes to continueBTOAR that were done to BTOAR:
+#          Do not preallocate Q, U, H (have two separate U matrices)
+#          Allow for partial breakdowns and keep track with m2 (this has not actually been tested and shown to work for breakdowns for BTOAR yet)
+#          continueBTOAR should not be passed m and m2, it should have its own version where the first element is the starting subspace size
