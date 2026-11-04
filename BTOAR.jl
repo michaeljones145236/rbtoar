@@ -18,13 +18,24 @@ function rrqr(A::Matrix,tol::Float64) #this is our IntraOrtho
     return Q,R*ColumnPermutation(p)' #return Q and (unfortunately non-upper trapezoidal) R
 end
 
-function BTOARRR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,Q::Matrix,U::Matrix,H::Matrix;l::Int=1,p::Real=1)
+#here if l is a vector, it should be the block ranks in order
+function BTOARRR(M::AbstractMatrix,D::AbstractMatrix,K::AbstractMatrix,Q::Matrix,U::Matrix,H::Matrix;l::Union{Int,Vector{Int}}=1,p::Real=1)
     MLU = lu(M)
     I₂QU = [Q*U[1:Int(size(U,1)//2),:];Q*U[Int(size(U,1)//2)+1:size(U,1),:]] #this costs a little extra memory to store, but should save recomputing
-    num = opnorm([MLU\(-D*I₂QU[1:size(Q,1),1:end-l]-K*I₂QU[size(Q,1)+1:2size(Q,1),1:end-l]);I₂QU[1:size(Q,1),1:end-l]]-I₂QU*H,p)
-    den = opnorm(I₂QU*H,p) #similarly cheap since I₂⊗QU comes for free
-    return num/den
+    if typeof(l) == Int
+        return opnorm([MLU\(-D*I₂QU[1:size(Q,1),1:end-l]-K*I₂QU[size(Q,1)+1:2size(Q,1),1:end-l]);I₂QU[1:size(Q,1),1:end-l]]-I₂QU*H,p)/opnorm(I₂QU*H,p)
+    else
+        num = [MLU\(-D*I₂QU[1:size(Q,1),1:end-l[end]]-K*I₂QU[size(Q,1)+1:2size(Q,1),1:end-l[end]]);I₂QU[1:size(Q,1),1:end-l[end]]]-I₂QU*H #difference of full LHS and RHS
+        den = I₂QU*H #full RHS
+        retval = Vector{Float64}(undef,length(l)-1)
+        for i in 1:length(l)-1
+            retval[i] = opnorm(num[:,1:sum(l[1:i])],p)/opnorm(den[:,1:sum(l[1:i])],p)
+        end
+        return retval
+    end
 end
+
+#function BTOARRH(
 
 hermitify(A) = (A+A')/2 #for the Cholesky factorisation, which thinks a matrix that's not EXACTLY Hermitian isn't acceptable
 
@@ -103,7 +114,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
     Uⱼ⁽²⁾ = Matrix{ComplexF64}(undef,k*l,k*l) #maximum possible size of U⁽¹⁾ (achieved if there are no deflations or breakdowns)
     Uⱼ⁽¹⁾[1:l,1:l] = I(l) #because V₁ = [Q₁;0]
     Uⱼ⁽²⁾[1:l,1:l] = zeros(l,l)
-    Hₖ = Matrix{ComplexF64}(undef,k*l,(k-1)*l) #maximum possible size of H (achieved if there are no breakdowns)
+    Hₖ = zeros(ComplexF64,k*l,(k-1)*l) #Matrix{ComplexF64}(undef,k*l,(k-1)*l) #maximum possible size of H (achieved if there are no breakdowns)
     
     for j in 1:k-1 #main for loop
         Rⱼ = M⁻¹(D(Qⱼ[:,1:sum(m[1:j])]*-Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])]) + K(Qⱼ[:,1:sum(m[1:j])]*-Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])])) #take next Rⱼ block vector
@@ -1004,3 +1015,7 @@ end
 #          Do not preallocate Q, U, H (have two separate U matrices)
 #          Allow for partial breakdowns and keep track with m2 (this has not actually been tested and shown to work for breakdowns for BTOAR yet)
 #          continueBTOAR should not be passed m and m2, it should have its own version where the first element is the starting subspace size
+########## Add input validation to BTOARRR (and fix that weird problem with array dimensions in the 
+
+
+
