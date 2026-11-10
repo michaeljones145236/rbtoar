@@ -88,7 +88,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         @warn "valid values of verb are 0, 1 and 2\nSetting verb to 0"
         verb = 0
     end
-    if !(orth in [:BMGS;:BMGS2;:BCGS;:BCGS2;:BMGS_old]) #I will maybe add other orthogonalisation schemes later
+    if !(orth in [:BMGS;:BMGS2;:BCGS;:BCGS2;:BMGS_old;:CGS;:CGS2;:MGS;:MGS2]) #I will maybe add other orthogonalisation schemes later
         @warn "Orthogonalisation scheme $orth not supported\nDefaulting to :BCGS2"
         orth = :BCGS2
     end
@@ -149,9 +149,56 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
                 Sᵣₑₛ[i:i,:] = Qⱼ[:,i:i]'*Qʰ¹
                 Qʰ¹ -= Qⱼ[:,i:i]*Sᵣₑₛ[i:i,:]
             end
-            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #just as for BCGS2+
-            Sⱼ += Sᵣₑₛ*Rʰ¹ #just as for BCGS2+
-            Rʰ = Rʰ²*Rʰ¹ #just as for BCGS2+
+            Qʰ,Rʰ² = rrqr(Qʰ¹,deftol) #just as for BCGS2
+            Sⱼ += Sᵣₑₛ*Rʰ¹ #just as for BCGS2
+            Rʰ = Rʰ²*Rʰ¹ #just as for BCGS2
+        elseif orth == :CGS
+            Sⱼ = Matrix{ComplexF64}(undef,sum(m[1:j]),l) #maximum possible size of Sⱼ if there are no deflations
+            Qʰ = Matrix{ComplexF64}(undef,n,l) #maximum possible size of Qʰ if there are no deflations
+            Rʰ = zeros(ComplexF64,l,l) #maximum possible size of Rʰ if there are no deflations
+            η = 0 #keeps track of the rank of the new block so far
+            for i in 1:l
+                α = norm(Rⱼ[:,i]) #needed in a moment for deflation detection
+                Sⱼ[:,i] = Qⱼ[:,1:sum(m[1:j])]'*Rⱼ[:,i] #orthogonalisation coefficients against previously orthogonalised blocks
+                Rʰ[1:η,i] = Qʰ[:,1:η]'*Rⱼ[:,i] #orthogonalisation coefficients against orthogonalised part of current block
+                Rⱼ[:,i] -= Qⱼ[:,1:sum(m[1:j])]*Sⱼ[:,i] + Qʰ[:,1:η]*Rʰ[1:η,i]
+                Rʰ[η+1,i] = norm(Rⱼ[:,i]) #diagonal element
+                if abs(Rʰ[η+1,i]) < α*deftol #this means deflation
+                    Qʰ = Qʰ[:,1:end-1] #now we know Qʰ will be smaller (shrinking the size of an array is not expensive like growing it can be)
+                    Rʰ = Rʰ[1:end-1,:] #now we know Rʰ will be smaller
+                else
+                    η += 1 #a new column will be added, so rank is incremented
+                    Qʰ[:,η] = Rⱼ[:,i]/Rʰ[η,i] #new column (here Rʰ[η,i] is what Rʰ[η+1,i] was before, careful)
+                end
+            end
+        elseif orth == :MGS
+            Sⱼ = Matrix{ComplexF64}(undef,sum(m[1:j]),l) #maximum possible size of Sⱼ if there are no deflations
+            Qʰ = Matrix{ComplexF64}(undef,n,l) #maximum possible size of Qʰ if there are no deflations
+            Rʰ = zeros(ComplexF64,l,l) #maximum possible size of Rʰ if there are no deflations
+            η = 0 #keeps track of the rank of the new block so far
+            for i in 1:l
+                α = norm(Rⱼ[:,i]) #needed in a moment for deflation detection
+                for ι in 1:sum(m[1:j]) #ran out of latin iteration variable names lol
+                    Sⱼ[ι,i] = Qⱼ[:,ι]'*Rⱼ[:,i] #orthogonalisation coefficients against previously orthogonalised blocks
+                    Rⱼ[:,i] -= Qⱼ[:,ι]*Sⱼ[ι,i] #orthogonalisation against previously orthogonalised blocks
+                end
+                for ι in 1:η
+                    Rʰ[ι,i] = Qʰ[:,ι]'*Rⱼ[:,i] #orthogonalisation coefficients against orthogonalised part of current block
+                    Rⱼ[:,i] -= Qʰ[:,ι]*Rʰ[ι,i] #orthogonalisation against orthogonalised part of current block
+                end
+                Rʰ[η+1,i] = norm(Rⱼ[:,i]) #diagonal element
+                if abs(Rʰ[η+1,i]) < α*deftol #this means deflation
+                    Qʰ = Qʰ[:,1:end-1] #now we know Qʰ will be smaller (shrinking the size of an array is not expensive like growing it can be)
+                    Rʰ = Rʰ[1:end-1,:] #now we know Rʰ will be smaller
+                else
+                    η += 1 #a new column will be added, so rank is incremented
+                    Qʰ[:,η] = Rⱼ[:,i]/Rʰ[η,i] #new column (here Rʰ[η,i] is what Rʰ[η+1,i] was before, careful)
+                end
+            end
+        elseif orth == :CGS2
+            error("CGS2 not implemented yet lol")
+        elseif orth == :MGS2
+            error("MGS2 not implemented yet lol")
         else #:BMGS_old, the old method that I used
             for i in 1:sum(m[1:j]) #first pass of MGS on each vector in the block against Qⱼ
                 Sⱼ[i:i,:] = Qⱼ[:,i:i]'*Rⱼ #coefficients of components of Rⱼ parallel to columns of Qⱼ
@@ -202,7 +249,7 @@ function BTOAR(M⁻¹::Function,D::Function,K::Function,R::Matrix,k::Int;deftol:
         Uʰ = Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #we copy this because we want to modify it in the orthogonalisation without modifying Uⱼ
         for i = 1:j #second-level orthogonalisation always uses BMGS2, since we don't care about cost for small matrices
             Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] = Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Sⱼ + Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]'*Uʰ #fill in new block column of Hₖ
-            Sⱼ -= Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]*Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #orthogonalise Sⱼ against Uⱼ⁽¹⁾
+            Sⱼ -= Uⱼ⁽¹⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]*Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #orthogonalise Sⱼ against Uⱼ⁽¹⁾ (this should give 0 when j=1 I think)
             Uʰ -= Uⱼ⁽²⁾[1:sum(m[1:j]),sum(m₂[1:i-1])+1:sum(m₂[1:i])]*Hₖ[sum(m₂[1:i-1])+1:sum(m₂[1:i]),sum(m₂[1:j-1])+1:sum(m₂[1:j])] #and Uʰ against Uⱼ⁽²⁾
         end
         Qᵗ¹,Rᵗ¹ = rrqr([Sⱼ;Rʰ;Uʰ],deftol)
@@ -1015,7 +1062,8 @@ end
 #          Do not preallocate Q, U, H (have two separate U matrices)
 #          Allow for partial breakdowns and keep track with m2 (this has not actually been tested and shown to work for breakdowns for BTOAR yet)
 #          continueBTOAR should not be passed m and m2, it should have its own version where the first element is the starting subspace size
-########## Add input validation to BTOARRR (and fix that weird problem with array dimensions in the 
-
+#          Add non-block orthogonalisation schemes
+########## Add input validation to BTOARRR
+########## Sort out the unreliable/inconsistent block rank decisions (take pre-orthogonalisation norm of Rⱼ)
 
 
